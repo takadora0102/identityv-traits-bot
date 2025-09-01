@@ -1,0 +1,22 @@
+{
+  "name": "identityv-traits-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Identity V 特質CTトラッカー（5秒更新・VC音声アナウンス・Render+UptimeRobot 無料運用）",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "register": "node src/register-commands.js"
+  },
+  "dependencies": {
+    "@discordjs/voice": "^0.17.0",
+    "discord.js": "^14.15.3",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "prism-media": "^1.3.5"
+  }
+}
