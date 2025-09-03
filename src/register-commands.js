@@ -1,6 +1,5 @@
 require('dotenv').config();
-const { REST, Routes } = require('discord.js');
-const setup = require('./commands/setup');
+const { REST, Routes, SlashCommandBuilder } = require('discord.js');
 
 const token = process.env.DISCORD_TOKEN;
 const appId = process.env.APPLICATION_ID;
@@ -15,12 +14,21 @@ const rest = new REST({ version: '10' }).setToken(token);
 
 (async () => {
   try {
-    console.log('Refreshing application (guild) commands...');
-    const cmds = [setup.data.toJSON()];
-    await rest.put(Routes.applicationGuildCommands(appId, guildId), { body: cmds });
+    // ここでコマンド定義を直接作る（音声等を一切requireしない）
+    const body = [
+      new SlashCommandBuilder()
+        .setName('setup')
+        .setDescription('VCに接続し、このチャンネルにコントロールパネルを設置します')
+        .toJSON()
+    ];
+
+    console.log('Registering to guild:', guildId);
+    await rest.put(Routes.applicationGuildCommands(appId, guildId), { body });
     console.log('✅ Successfully registered commands.');
   } catch (e) {
-    console.error('Failed to register commands:', e);
+    console.error('❌ Failed to register commands.');
+    if (e.rawError) console.error('rawError:', JSON.stringify(e.rawError, null, 2));
+    else console.error(e);
     process.exit(1);
   }
 })();
