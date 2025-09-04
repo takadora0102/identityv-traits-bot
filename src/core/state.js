@@ -1,91 +1,49 @@
-// ギルドごとの状態をメモリ管理（MVPなのでDBなし）
-
-const defaultGuildState = () => ({
-  panelChannelId: null,
-  panelMessageId: null,
-
-  voiceChannelId: null,
-  voice: {
-    connected: false,
-    connection: null,
-    player: null,
-    queue: [],
-    playing: false,
-    muted: false
-  },
-
-  game: {
-    startedAt: null,      // ms epoch
-    backcardUsed: false,
-    activeTraitKey: null  // ボタンで確定した特質
-  },
-
-  // 一般特質のタイマー endAt（ms）を持つ
-  traits: {
-    // key: { running, endAt, lastStartAt }
-  },
-
-  // 監視者の管理（スタックとチャージ予定）
-  watcher: {
-    stacks: 0,
-    chargeTimers: [],    // setTimeout handles
-    nextChargeAt: null   // ms epoch（stacks<3の時のみ）
-  },
-
-  // アナウンス（音声）予約タイマー（キャンセル用）
-  announceTimers: {
-    // key: Timeout[]
-  },
-
-  // 5秒境界更新のタイマー
-  panelTickTimer: null
-});
+// src/core/state.js
+/**
+ * ギルドごとの状態管理
+ * - matchActive: 試合中フラグ
+ * - timers: setTimeout のハンドル群（試合終了で一括キャンセル）
+ * - voiceChannelId / panel* : 参照用
+ * - （必要に応じて拡張: 特質CT など）
+ */
 
 const guildStates = new Map(); // guildId -> state
 
+function createInitialState(guildId) {
+  return {
+    guildId,
+    matchActive: false,
+    timers: new Set(),
+    voiceChannelId: null,
+    panelChannelId: null,
+    panelMessageId: null,
+
+    // ここから下は任意の拡張（必要に応じて使ってください）
+    traits: {
+      // 例：特質ごとの次回使用可能時刻などを保持したいときに使う
+    },
+  };
+}
+
 function getGuildState(guildId) {
   if (!guildStates.has(guildId)) {
-    guildStates.set(guildId, defaultGuildState());
+    guildStates.set(guildId, createInitialState(guildId));
   }
   return guildStates.get(guildId);
 }
 
+/** 次の試合に向けて“ゲーム関連のみ”初期化（VC接続やパネル情報は維持） */
 function resetGameState(state) {
-  // 試合単位の情報だけリセット
-  state.game.startedAt = null;
-  state.game.backcardUsed = false;
-  state.game.activeTraitKey = null;
+  // 試合関連タイマーをここでは触らない（scheduler側の cancelAll で止める）
+  state.matchActive = false;
+
+  // 特質などゲーム単位の状態があればリセット
   state.traits = {};
-  // 監視者
-  clearWatcherTimers(state);
-  state.watcher = { stacks: 0, chargeTimers: [], nextChargeAt: null };
-  // 予約アナウンス
-  cancelAllAnnouncements(state);
-}
-
-function clearWatcherTimers(state) {
-  for (const t of state.watcher.chargeTimers) {
-    try { clearTimeout(t); } catch {}
-  }
-  state.watcher.chargeTimers = [];
-}
-
-function cancelAllAnnouncements(state, traitKey = null) {
-  if (traitKey) {
-    const arr = state.announceTimers[traitKey] || [];
-    arr.forEach(t => { try { clearTimeout(t); } catch {} });
-    state.announceTimers[traitKey] = [];
-  } else {
-    for (const key of Object.keys(state.announceTimers)) {
-      state.announceTimers[key].forEach(t => { try { clearTimeout(t); } catch {} });
-    }
-    state.announceTimers = {};
-  }
 }
 
 module.exports = {
+  guildStates,      // スケジューラや index から参照できるよう公開
+  createInitialState,
   getGuildState,
   resetGameState,
-  clearWatcherTimers,
-  cancelAllAnnouncements
 };

@@ -1,143 +1,182 @@
+// src/voice/player.js
 const fs = require('fs');
 const path = require('path');
-const { joinVoiceChannel, entersState, VoiceConnectionStatus, createAudioResource, createAudioPlayer, AudioPlayerStatus } = require('@discordjs/voice');
-const { VOICE_TOKENS } = require('../core/constants');
+const {
+  joinVoiceChannel,
+  entersState,
+  VoiceConnectionStatus,
+  createAudioResource,
+  createAudioPlayer,
+  AudioPlayerStatus,
+  StreamType,
+  demuxProbe,
+} = require('@discordjs/voice');
+const { defaultDir } = require('../core/bootstrapAudio');
 
-const AUDIO_DIR = path.join(__dirname, '..', '..', 'audio', 'jp');
+const AUDIO_DIR = process.env.AUDIO_DIR || defaultDir;
+const GAP_MS = Number(process.env.VOICE_GAP_MS || 80); // クリップ間の無音（ms）
 
-/** VC接続（既に接続済みなら再利用） */
-async function connectVoice(guild, voiceChannelId, state) {
-  if (state.voice.connected && state.voice.connection) {
-    try { await entersState(state.voice.connection, VoiceConnectionStatus.Ready, 5_000); } catch {}
-    return state.voice.connection;
+/** ギルドごとの接続/プレイヤー/キュー状態 */
+const connections = new Map(); // guildId -> VoiceConnection
+const players = new Map();     // guildId -> AudioPlayer
+const queues = new Map();      // guildId -> string[]（ファイルフルパスのキュー）
+const playing = new Map();     // guildId -> boolean 再生中フラグ
+
+function ensureQueue(guildId) {
+  if (!queues.has(guildId)) queues.set(guildId, []);
+  return queues.get(guildId);
+}
+
+function ensurePlayer(guildId) {
+  if (!players.has(guildId)) {
+    const p = createAudioPlayer();
+    players.set(guildId, p);
   }
-  const channel = guild.channels.cache.get(voiceChannelId);
-  if (!channel) throw new Error('VCが見つかりません');
+  return players.get(guildId);
+}
 
-  const connection = joinVoiceChannel({
-    channelId: voiceChannelId,
-    guildId: guild.id,
-    adapterCreator: guild.voiceAdapterCreator,
-    selfDeaf: true,
-    selfMute: false
-  });
-  state.voice.connection = connection;
-  state.voice.connected = true;
+/** トークン名から音声ファイルパスを得る（.ogg を優先） */
+function audioPath(token) {
+  const candidates = [`${token}.ogg`, `${token}.wav`]; // WAVも一応フォールバック
+  for (const f of candidates) {
+    const p = path.join(AUDIO_DIR, f);
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
 
-  const player = createAudioPlayer();
-  state.voice.player = player;
-  connection.subscribe(player);
+/** クリップファイルから AudioResource を生成（demuxProbeで型自動判定） */
+async function makeResource(filePath) {
+  const stream = fs.createReadStream(filePath);
+  const { stream: probed, type } = await demuxProbe(stream); // 例: StreamType.OggOpus
+  return createAudioResource(probed, { inputType: type ?? StreamType.Arbitrary });
+}
 
-  player.on(AudioPlayerStatus.Idle, () => {
-    state.voice.playing = false;
-    processQueue(state);
-  });
+/** 内部: 次のキューを再生 */
+async function playNext(guildId) {
+  if (playing.get(guildId)) return;
+  const q = ensureQueue(guildId);
+  if (q.length === 0) return;
 
-  player.on('error', (e) => {
-    console.warn(`[voice] player error: ${e.message}`);
-    state.voice.playing = false;
-    processQueue(state);
-  });
+  const filePath = q.shift();
+  if (!filePath || !fs.existsSync(filePath)) {
+    // 見つからない場合は次へ
+    return setTimeout(() => playNext(guildId), GAP_MS);
+  }
 
   try {
-    await entersState(connection, VoiceConnectionStatus.Ready, 10_000);
+    const player = ensurePlayer(guildId);
+    const resource = await makeResource(filePath);
+    playing.set(guildId, true);
+    player.play(resource);
   } catch (e) {
-    console.error('[voice] connection not ready:', e.message);
+    console.error('[voice] playNext failed:', e);
+    playing.set(guildId, false);
+    return setTimeout(() => playNext(guildId), GAP_MS);
   }
-  return connection;
 }
 
-function audioPath(token) {
-  const f = `${token}.ogg`;
-  const p = path.join(AUDIO_DIR, f);
-  return fs.existsSync(p) ? p : null;
-}
-
-/** 再生キューにトークン配列を積む（存在しないトークンはスキップ） */
-function enqueueTokens(state, tokens, gapMs = 80) {
-  const files = tokens
-    .map(t => audioPath(t))
-    .filter(Boolean);
-  if (files.length === 0) {
-    // 音源が未用意ならログだけ
-    console.log(`[voice] (no files) would say: ${tokens.join(' ')}`);
-    return;
+/** キューが空＆停止状態のときだけ再生を始める */
+function kickIfIdle(guildId) {
+  const player = ensurePlayer(guildId);
+  if (!playing.get(guildId) && ensureQueue(guildId).length > 0) {
+    // 非同期に始動
+    setTimeout(() => playNext(guildId), 0);
   }
-  state.voice.queue.push({ files, gapMs });
-  processQueue(state);
-}
-
-function processQueue(state) {
-  if (!state.voice.player || state.voice.playing) return;
-  const job = state.voice.queue.shift();
-  if (!job) return;
-
-  const [first, ...rest] = job.files;
-  const playOne = (file) => {
-    const res = createAudioResource(file, { inlineVolume: true });
-    state.voice.player.play(res);
-  };
-
-  let idx = 0;
-  const playNext = () => {
-    if (idx >= job.files.length) {
-      // 全クリップ完了
-      state.voice.playing = false;
-      return;
+  // idle -> 次を自動で流す
+  player.removeAllListeners('stateChange');
+  player.on('stateChange', (oldS, newS) => {
+    if (oldS.status !== AudioPlayerStatus.Playing && newS.status === AudioPlayerStatus.Playing) {
+      // 再生開始
     }
-    state.voice.playing = true;
-    const file = job.files[idx++];
-    const onIdle = () => {
-      state.voice.player.removeListener(AudioPlayerStatus.Idle, onIdle);
-      setTimeout(() => {
-        playNext();
-      }, job.gapMs);
-    };
-    state.voice.player.once(AudioPlayerStatus.Idle, onIdle);
-    playOne(file);
-  };
-
-  playNext();
+    if (newS.status === AudioPlayerStatus.Idle && oldS.status !== AudioPlayerStatus.Idle) {
+      // 再生終了 → 次へ
+      playing.set(guildId, false);
+      setTimeout(() => playNext(guildId), GAP_MS);
+    }
+  });
 }
 
-/** 汎用フレーズヘルパー */
-function sayReady(state, traitKey) {
-  const token = VOICE_TOKENS[traitKey];
-  if (!token) return;
-  enqueueTokens(state, [token, VOICE_TOKENS.ready]);
+/** VCに接続（既存があれば使い回し） */
+async function connectVoice(guild, channelId) {
+  const gid = guild.id;
+  let conn = connections.get(gid);
+  if (conn && conn.joinConfig.channelId === channelId) {
+    return conn;
+  }
+  try {
+    conn = joinVoiceChannel({
+      guildId: gid,
+      channelId,
+      adapterCreator: guild.voiceAdapterCreator,
+      selfDeaf: false,
+      selfMute: false,
+    });
+    connections.set(gid, conn);
+
+    const player = ensurePlayer(gid);
+    conn.subscribe(player);
+    await entersState(conn, VoiceConnectionStatus.Ready, 10_000);
+    console.log(`[voice] connected guild=${gid} ch=${channelId}`);
+    return conn;
+  } catch (e) {
+    console.error('[voice] connectVoice error', e);
+    throw e;
+  }
 }
 
-function sayRemain(state, traitKey, sec) {
-  const token = VOICE_TOKENS[traitKey];
-  const secToken = sec === 60 ? VOICE_TOKENS.s60
-                : sec === 30 ? VOICE_TOKENS.s30
-                : sec === 10 ? VOICE_TOKENS.s10
-                : sec === 5  ? VOICE_TOKENS.s5 : null;
-  if (!token || !secToken) return;
-  enqueueTokens(state, [token, VOICE_TOKENS.remain, secToken]);
+/** トークン列をキューに追加して再生（存在するものだけ） */
+function enqueueTokens(guildId, tokens) {
+  const files = [];
+  for (const t of tokens) {
+    const p = audioPath(t);
+    if (p) files.push(p);
+    else console.warn(`[voice] missing token file: ${t}`);
+  }
+  if (files.length === 0) return;
+  ensureQueue(guildId).push(...files);
+  kickIfIdle(guildId);
 }
 
-function sayWatcherEvent(state, type /* 'charge1'|'charge2'|'full' */) {
-  const t = VOICE_TOKENS['watcher'];
-  const map = {
-    charge1: VOICE_TOKENS.charge1,
-    charge2: VOICE_TOKENS.charge2,
-    full: VOICE_TOKENS.full
-  };
-  const tail = map[type];
-  if (!t || !tail) return;
-  enqueueTokens(state, [t, tail]);
+/** 直接ファイル名（拡張子不要）を渡して再生 */
+function enqueueFiles(guildId, names) {
+  const files = [];
+  for (const n of names) {
+    const p = path.join(AUDIO_DIR, `${n}.ogg`);
+    if (fs.existsSync(p)) files.push(p);
+  }
+  if (files.length === 0) return;
+  ensureQueue(guildId).push(...files);
+  kickIfIdle(guildId);
 }
 
-function sayBackcardReady(state) {
-  enqueueTokens(state, [VOICE_TOKENS.backcard, VOICE_TOKENS.ready]);
+/** 再生を止めてキューを空に（VCは切断しない） */
+function stopAll(guildId) {
+  const q = ensureQueue(guildId);
+  q.splice(0, q.length);
+  const player = players.get(guildId);
+  if (player) player.stop(true);
+  playing.set(guildId, false);
+}
+
+/** VCから切断（必要なら） */
+function disconnect(guildId) {
+  const conn = connections.get(guildId);
+  if (conn) {
+    try { conn.destroy(); } catch {}
+    connections.delete(guildId);
+  }
+  const player = players.get(guildId);
+  if (player) players.delete(guildId);
+  queues.delete(guildId);
+  playing.delete(guildId);
 }
 
 module.exports = {
   connectVoice,
   enqueueTokens,
-  sayReady,
-  sayRemain,
-  sayWatcherEvent,
-  sayBackcardReady
+  enqueueFiles,
+  stopAll,
+  disconnect,
+  AUDIO_DIR,
 };
