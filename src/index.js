@@ -10,6 +10,9 @@ const selectHandler = require('./interactions/selects');
 const PORT = process.env.PORT || 3000;
 const TOKEN = process.env.DISCORD_TOKEN;
 
+const { generateDependencyReport } = require('@discordjs/voice');
+console.log(generateDependencyReport());
+
 if (!TOKEN) {
   console.error('DISCORD_TOKEN が未設定です。');
   process.exit(1);
