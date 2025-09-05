@@ -14,13 +14,15 @@ const {
 const { defaultDir } = require('../core/bootstrapAudio');
 
 const AUDIO_DIR = process.env.AUDIO_DIR || defaultDir;
-const GAP_MS = Number(process.env.VOICE_GAP_MS || 80); // クリップ間の無音（ms）
+const GAP_MS = Number.isFinite(Number(process.env.VOICE_GAP_MS))
+  ? Number(process.env.VOICE_GAP_MS)
+  : 80; // クリップ間の無音(ms)
 
 /** ギルドごとの接続/プレイヤー/キュー状態 */
 const connections = new Map(); // guildId -> VoiceConnection
 const players = new Map();     // guildId -> AudioPlayer
 const queues = new Map();      // guildId -> string[]（ファイルフルパスのキュー）
-const playing = new Map();     // guildId -> boolean 再生中フラグ
+const playing = new Map();     // guildId -> boolean
 
 function ensureQueue(guildId) {
   if (!queues.has(guildId)) queues.set(guildId, []);
@@ -30,14 +32,26 @@ function ensureQueue(guildId) {
 function ensurePlayer(guildId) {
   if (!players.has(guildId)) {
     const p = createAudioPlayer();
+    // idle になったら次を流す
+    p.on('stateChange', (oldS, newS) => {
+      if (newS.status === AudioPlayerStatus.Idle && oldS.status !== AudioPlayerStatus.Idle) {
+        playing.set(guildId, false);
+        setTimeout(() => playNext(guildId), GAP_MS);
+      }
+    });
+    p.on('error', (err) => {
+      console.error('[voice] player error:', err);
+      playing.set(guildId, false);
+      setTimeout(() => playNext(guildId), GAP_MS);
+    });
     players.set(guildId, p);
   }
   return players.get(guildId);
 }
 
-/** トークン名から音声ファイルパスを得る（.ogg を優先） */
+/** トークン名から音声ファイルパス（.ogg優先, .wavフォールバック）を得る */
 function audioPath(token) {
-  const candidates = [`${token}.ogg`, `${token}.wav`]; // WAVも一応フォールバック
+  const candidates = [`${token}.ogg`, `${token}.wav`];
   for (const f of candidates) {
     const p = path.join(AUDIO_DIR, f);
     if (fs.existsSync(p)) return p;
@@ -60,7 +74,6 @@ async function playNext(guildId) {
 
   const filePath = q.shift();
   if (!filePath || !fs.existsSync(filePath)) {
-    // 見つからない場合は次へ
     return setTimeout(() => playNext(guildId), GAP_MS);
   }
 
@@ -72,29 +85,15 @@ async function playNext(guildId) {
   } catch (e) {
     console.error('[voice] playNext failed:', e);
     playing.set(guildId, false);
-    return setTimeout(() => playNext(guildId), GAP_MS);
+    setTimeout(() => playNext(guildId), GAP_MS);
   }
 }
 
 /** キューが空＆停止状態のときだけ再生を始める */
 function kickIfIdle(guildId) {
-  const player = ensurePlayer(guildId);
   if (!playing.get(guildId) && ensureQueue(guildId).length > 0) {
-    // 非同期に始動
     setTimeout(() => playNext(guildId), 0);
   }
-  // idle -> 次を自動で流す
-  player.removeAllListeners('stateChange');
-  player.on('stateChange', (oldS, newS) => {
-    if (oldS.status !== AudioPlayerStatus.Playing && newS.status === AudioPlayerStatus.Playing) {
-      // 再生開始
-    }
-    if (newS.status === AudioPlayerStatus.Idle && oldS.status !== AudioPlayerStatus.Idle) {
-      // 再生終了 → 次へ
-      playing.set(guildId, false);
-      setTimeout(() => playNext(guildId), GAP_MS);
-    }
-  });
 }
 
 /** VCに接続（既存があれば使い回し） */
@@ -111,6 +110,8 @@ async function connectVoice(guild, channelId) {
       adapterCreator: guild.voiceAdapterCreator,
       selfDeaf: false,
       selfMute: false,
+      // DAVEを無効化し、AEAD/XSalsa 系にフォールバック（@snazzah/davey不要）
+      daveEncryption: false,
     });
     connections.set(gid, conn);
 
@@ -118,6 +119,11 @@ async function connectVoice(guild, channelId) {
     conn.subscribe(player);
     await entersState(conn, VoiceConnectionStatus.Ready, 10_000);
     console.log(`[voice] connected guild=${gid} ch=${channelId}`);
+    // 接続エラー監視
+    conn.on('error', (err) => console.error('[voice] connection error:', err));
+    conn.on(VoiceConnectionStatus.Disconnected, () => {
+      playing.set(gid, false);
+    });
     return conn;
   } catch (e) {
     console.error('[voice] connectVoice error', e);
@@ -142,8 +148,10 @@ function enqueueTokens(guildId, tokens) {
 function enqueueFiles(guildId, names) {
   const files = [];
   for (const n of names) {
-    const p = path.join(AUDIO_DIR, `${n}.ogg`);
-    if (fs.existsSync(p)) files.push(p);
+    const pOgg = path.join(AUDIO_DIR, `${n}.ogg`);
+    const pWav = path.join(AUDIO_DIR, `${n}.wav`);
+    if (fs.existsSync(pOgg)) files.push(pOgg);
+    else if (fs.existsSync(pWav)) files.push(pWav);
   }
   if (files.length === 0) return;
   ensureQueue(guildId).push(...files);
