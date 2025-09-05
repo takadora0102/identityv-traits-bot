@@ -17,7 +17,8 @@ function cancelAll(state) {
 function scheduleAfter(state, ms, fn) {
   const handle = setTimeout(() => {
     state.timers.delete(handle);
-    try { fn(); } catch (e) { console.error('[scheduler] task error:', e); }
+    try { fn(); } catch (e) { console.error('[scheduler] task error:', e);
+    }
   }, ms);
   state.timers.add(handle);
   return handle;
@@ -47,7 +48,7 @@ async function startMatch(client, state) {
   scheduleReady(120_000, 'uramuki');
 
   // 監視者チャージや特質ごとのT-30/T-10/T-5 などは
-  // 既存の実装に合わせてここへ scheduleAfter を追加してください。
+  // 必要に応じてここへ scheduleAfter を追加してください。
 }
 
 /** 試合終了：全タイマー停止＋音声キュー停止（VCには待機） */
@@ -57,9 +58,19 @@ function endMatch(state) {
   stopAll(state.guildId);
 }
 
+/**
+ * 互換用 no-op:
+ * 旧実装では ClientReady で定期ジョブを起動していたため、
+ * index.js が呼ぶ startScheduler を残しておく（現実装では不要）。
+ */
+function startScheduler(/* client, guildStates */) {
+  // 何もしない（必要ならここで定期タスクを起動）
+}
+
 module.exports = {
   startMatch,
   endMatch,
   cancelAll,
   scheduleAfter,
+  startScheduler, // ← 追加
 };
