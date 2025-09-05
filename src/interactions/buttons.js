@@ -9,17 +9,15 @@
 
 const { startMatch, endMatch } = require('../core/scheduler');
 const { getGuildState, resetGameState } = require('../core/state');
-const { buildEmbed, buildInGameComponents, buildInitialComponents } = require('../core/render');
+const { buildEmbed, buildInGameComponents } = require('../core/render');
 
-module.exports = async function handleButton(interaction, client) {
+async function handle(interaction, client) {
   const state = getGuildState(interaction.guildId);
   const id = interaction.customId;
 
   // 🎮 ゲーム開始
   if (id === 'game:start') {
-    // 既に試合中の場合は何もしない/または再スケジュールなど好みで
     state.matchActive = true;
-
     await startMatch(client, state);
 
     const embed = buildEmbed(state);
@@ -32,14 +30,12 @@ module.exports = async function handleButton(interaction, client) {
     endMatch(state);
 
     const embed = buildEmbed(state);
-    // 待機中のUI：特質ボタンを消して、マッチコントロールのみ
-    const components = buildInGameComponents(state); // ここを「待機用UI関数」に分けてもOK
+    const components = buildInGameComponents(state); // 待機UIに分けたい場合は関数を分けてもOK
     return interaction.update({ embeds: [embed], components });
   }
 
   // ▶ 次の試合開始
   if (id === 'match:next') {
-    // ゲーム状態を初期化してから開始
     resetGameState(state);
     state.matchActive = true;
 
@@ -55,6 +51,8 @@ module.exports = async function handleButton(interaction, client) {
   // if (id.startsWith('trait:')) { ... }
   // if (id === 'uramuki:select') { ... }
 
-  // 未対応のボタンは無視（or 既存処理にフォールバック）
+  // 未対応のボタンは無視
   return;
-};
+}
+
+module.exports = { handle };
