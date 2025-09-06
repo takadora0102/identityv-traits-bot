@@ -1,10 +1,9 @@
 // src/core/render.js
 /**
  * 埋め込みとコンポーネント（ボタン/セレクト）を構築
- * ここでは「🎮 ゲーム開始」「🛑 試合終了」「▶ 次の試合開始」を中心に、
- * 試合中/待機中での出し分けを行う。
- * 既存の特質ボタンや裏向きカードセレクトを持っている場合は、
- * buildInGameComponents() 内にマージしてください。
+ * - 初期: 「▶ 試合開始」ボタンを表示
+ * - 試合中/待機中での出し分け
+ * ※ 特質ボタンや裏向きカードセレクトがある場合は、buildInGameComponents に追記してください
  */
 
 const {
@@ -50,13 +49,13 @@ function buildMatchControls(state) {
   return new ActionRowBuilder().addComponents(endBtn, nextBtn);
 }
 
-/** 初期（/setup直後）に出す構成：まずは「🎮 ゲーム開始」とマッチコントロール */
+/** 初期（/setup直後）に出す構成：まずは「▶ 試合開始」とマッチコントロール */
 function buildInitialComponents() {
   const rowStart = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('game:start')
       .setStyle(ButtonStyle.Primary)
-      .setLabel('🎮 ゲーム開始')
+      .setLabel('▶ 試合開始')
   );
   // 初期状態は matchActive=false を想定
   const rowMatch = buildMatchControls({ matchActive: false });
@@ -66,7 +65,6 @@ function buildInitialComponents() {
 /**
  * 試合中のコンポーネント構成
  * - 既存の特質ボタンや裏向きカードセレクトがある場合は rows に加えてください
- * - このサンプルは最小限として、マッチコントロールのみを返します
  */
 function buildInGameComponents(state) {
   const rows = [];

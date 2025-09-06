@@ -1,24 +1,26 @@
 // src/interactions/buttons.js
 /**
  * ボタンのインタラクションをさばくハンドラ
- * - 🎮 ゲーム開始: 試合開始スケジュールをセットし、UIを試合中に更新
- * - 🛑 試合終了: タイマーと音声を止めて待機状態へ
- * - ▶ 次の試合開始: 状態初期化→開始スケジュール再設定
+ * - ▶ 試合開始: 試合開始スケジュールをセットし、「試合開始」をアナウンス
+ * - 🛑 試合終了: タイマーと音声を止めてから「試合終了」をアナウンス
+ * - ▶ 次の試合開始: 状態初期化→開始スケジュール再設定→「試合開始」をアナウンス
  * 既存の特質ボタン等は、この分岐の下に続けてください。
  */
 
 const { startMatch, endMatch } = require('../core/scheduler');
 const { getGuildState, resetGameState } = require('../core/state');
 const { buildEmbed, buildInGameComponents } = require('../core/render');
+const { enqueueTokens } = require('../voice/player');
 
 async function handle(interaction, client) {
   const state = getGuildState(interaction.guildId);
   const id = interaction.customId;
 
-  // 🎮 ゲーム開始
+  // ▶ 試合開始
   if (id === 'game:start') {
     state.matchActive = true;
     await startMatch(client, state);
+    enqueueTokens(state.guildId, ['shiai_kaishi']); // 「試合開始」
 
     const embed = buildEmbed(state);
     const components = buildInGameComponents(state);
@@ -27,10 +29,11 @@ async function handle(interaction, client) {
 
   // 🛑 試合終了
   if (id === 'match:end') {
-    endMatch(state);
+    endMatch(state); // stopAllで再生も停止
+    enqueueTokens(state.guildId, ['shiai_shuuryou']); // 「試合終了」
 
     const embed = buildEmbed(state);
-    const components = buildInGameComponents(state); // 待機UIに分けたい場合は関数を分けてもOK
+    const components = buildInGameComponents(state);
     return interaction.update({ embeds: [embed], components });
   }
 
@@ -40,6 +43,7 @@ async function handle(interaction, client) {
     state.matchActive = true;
 
     await startMatch(client, state);
+    enqueueTokens(state.guildId, ['shiai_kaishi']); // 「試合開始」
 
     const embed = buildEmbed(state);
     const components = buildInGameComponents(state);
