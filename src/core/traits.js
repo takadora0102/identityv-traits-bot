@@ -34,4 +34,7 @@ const TRAITS = {
 
 const PRIMARY_READY_KEYS = ['kofun', 'shunkan', 'ikei', 'shinshutsu'];
 
-module.exports = { TRAITS, PRIMARY_READY_KEYS };
+/** 裏向きカードで選べる候補（自分自身と uramuki を除外） */
+const URAMUKI_CHOICES = ['kofun', 'shunkan', 'ikei', 'shinshutsu', 'ijou', 'junshisha', 'kanshisha', 'listen'];
+
+module.exports = { TRAITS, PRIMARY_READY_KEYS, URAMUKI_CHOICES };

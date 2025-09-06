@@ -4,7 +4,7 @@
  * - 初期: 「▶ 試合開始」＋ マッチコントロール
  * - 試合中:
  *    - 特質未判明: 特質ボタン行を表示
- *    - 特質判明:   タイマー or 監視者スタック表示＋「再使用した」ボタン
+ *    - 特質判明:   タイマー or 監視者スタック表示＋「再使用した」ボタン＋裏向きカードセレクト
  */
 
 const {
@@ -12,8 +12,9 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  StringSelectMenuBuilder,
 } = require('discord.js');
-const { TRAITS } = require('./traits');
+const { TRAITS, URAMUKI_CHOICES } = require('./traits');
 
 function secsRemaining(msUntil) {
   const r = Math.ceil((msUntil - Date.now()) / 1000);
@@ -67,7 +68,7 @@ function buildMatchControls(state) {
     .setCustomId('match:next')
     .setStyle(ButtonStyle.Success)
     .setLabel('▶ 次の試合開始')
-    .setDisabled(state.matchActive ? false : false); // 待機/試合中どちらでも表示（無効化は上で制御）
+    .setDisabled(false);
 
   return new ActionRowBuilder().addComponents(endBtn, nextBtn);
 }
@@ -108,6 +109,22 @@ function buildReuseRow(key) {
   );
 }
 
+/** 裏向きカードセレクト（判明中かつ未使用時に表示） */
+function buildUramukiRow(currentKey) {
+  const options = URAMUKI_CHOICES
+    .filter(k => k !== currentKey)
+    .map(k => ({ label: TRAITS[k].name, value: k }));
+
+  const select = new StringSelectMenuBuilder()
+    .setCustomId('uramuki:select')
+    .setPlaceholder('裏向きカード：変更先を選択')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .setOptions(options);
+
+  return new ActionRowBuilder().addComponents(select);
+}
+
 /** 試合中のコンポーネント構成 */
 function buildInGameComponents(state) {
   const rows = [];
@@ -119,6 +136,10 @@ function buildInGameComponents(state) {
   } else {
     // 判明：再使用ボタン
     rows.push(buildReuseRow(key));
+    // 裏向きカード（未使用時のみ）
+    if (!state.usedUramuki) {
+      rows.push(buildUramukiRow(key));
+    }
   }
 
   // 共通のマッチコントロール

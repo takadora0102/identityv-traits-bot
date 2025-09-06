@@ -5,6 +5,7 @@
  * - 解読加速（202s）: -60s/-30s/0s を予約
  * - 特質判明→CT開始: T-60(>=60のみ)/T-30/T-10/T-5/T=0 アナウンス
  * - 5秒毎UI更新（Embed/Buttons）
+ * - 監視者: 所持N + M/10 の進捗表示（5秒ごと更新）
  */
 
 const { enqueueTokens, stopAll } = require('../voice/player');
@@ -95,7 +96,7 @@ function cancelInitialReadyAll(state) {
   }
 }
 
-/** 特質の使用→CT開始（アナウンス予約＋UI更新） */
+/** 特質の使用→CT開始（アナウンス予約＋UI更新, uses++） */
 function scheduleTraitCooldown(client, state, key, cooldownSec) {
   const gid = state.guildId;
   if (!state.traits[key]) state.traits[key] = { uses: 0, cooldownTimeouts: new Set() };
@@ -109,17 +110,52 @@ function scheduleTraitCooldown(client, state, key, cooldownSec) {
   if (t.uiInterval) clearInterval(t.uiInterval);
 
   const now = Date.now();
-  t.uses = (t.uses || 0) + 1;
+  t.uses = (t.uses || 0) + 1; // ← 使用起点
   t.cooldownSec = cooldownSec;
   t.cooldownEndsAt = now + cooldownSec * 1000;
 
-  // 残り通知（>=60 のとき T-60 あり）
+  scheduleMarks(client, state, key, cooldownSec, t.cooldownEndsAt);
+
+  // 5秒ごとにUI更新（残りCT表記）
+  t.uiInterval = intervalEvery(state, 5000, () => updatePanel(client, state));
+}
+
+/** 変換などで「残りX秒」から開始（usesは1にして次回はnext扱い） */
+function scheduleTraitCooldownWithRemaining(client, state, key, remainSec) {
+  const gid = state.guildId;
+  if (!state.traits[key]) state.traits[key] = { uses: 0, cooldownTimeouts: new Set() };
+  const t = state.traits[key];
+
+  // 既存のCTタイマー/インターバルをクリア
+  if (t.cooldownTimeouts) {
+    for (const h of t.cooldownTimeouts) clearTimeout(h);
+    t.cooldownTimeouts.clear();
+  }
+  if (t.uiInterval) clearInterval(t.uiInterval);
+
+  const now = Date.now();
+  t.uses = Math.max(1, t.uses || 0);  // ← 以降はnext扱いになるよう最低1に
+  t.cooldownSec = remainSec;
+  t.cooldownEndsAt = now + remainSec * 1000;
+
+  scheduleMarks(client, state, key, remainSec, t.cooldownEndsAt);
+
+  t.uiInterval = intervalEvery(state, 5000, () => updatePanel(client, state));
+}
+
+/** マーク（T-60/30/10/5/0）をスケジュール */
+function scheduleMarks(client, state, key, cooldownSec, endsAt) {
+  const gid = state.guildId;
+  const now = Date.now();
   const marks = [];
   if (cooldownSec >= 60) marks.push(60);
   marks.push(30, 10, 5, 0);
 
+  if (!state.traits[key]) state.traits[key] = { uses: 0, cooldownTimeouts: new Set() };
+  const t = state.traits[key];
+
   for (const m of marks) {
-    const when = t.cooldownEndsAt - m * 1000;
+    const when = endsAt - m * 1000;
     const handle = scheduleAfter(state, when - now, () => {
       if (m === 0) {
         enqueueTokens(gid, [TRAITS[key].token, 'tsukae_masu']);
@@ -127,27 +163,29 @@ function scheduleTraitCooldown(client, state, key, cooldownSec) {
         const tokenSec = `${m}byo`;
         enqueueTokens(gid, [TRAITS[key].token, 'nokori', tokenSec]);
       }
-      // T=0 到達時にUI更新
       if (m === 0) updatePanel(client, state);
     });
     t.cooldownTimeouts.add(handle);
   }
-
-  // 5秒ごとにUI更新（残りCT表記）
-  t.uiInterval = intervalEvery(state, 5000, () => updatePanel(client, state));
 }
 
-/** 監視者のチャージ進行（所持 N + M/10 表示用） */
-function startKanshishaCharging(client, state) {
+/** 監視者のチャージ進行（所持 N + M/10 表示用, seedで初期状態指定可） */
+function startKanshishaCharging(client, state, seed) {
   const key = 'kanshisha';
   if (!state.traits[key]) state.traits[key] = {};
   const ks = state.traits[key].stacking = state.traits[key].stacking || {};
 
-  // 初期化（所持0、部分進行0）
-  ks.stacks = ks.stacks ?? 0;
-  ks.partial = ks.partial ?? 0; // 0..1 (次の1個までの進捗)
+  // seed指定または初期化
+  if (seed) {
+    ks.stacks = seed.stacks ?? 0;
+    ks.partial = seed.partial ?? 0;
+    ks.nextMs = seed.nextMs ?? (ks.stacks === 0 ? 10_000 : 30_000);
+  } else {
+    ks.stacks = ks.stacks ?? 0;
+    ks.partial = ks.partial ?? 0;
+    ks.nextMs = ks.stacks === 0 ? 10_000 : 30_000; // 最初は10s、その後30s
+  }
   ks.lastTick = Date.now();
-  ks.nextMs = ks.stacks === 0 ? 10_000 : 30_000; // 最初は10s、その後30s
 
   if (ks.interval) clearInterval(ks.interval);
   ks.interval = intervalEvery(state, 5000, () => {
@@ -181,6 +219,7 @@ async function startMatch(client, state) {
   state.matchActive = true;
   state.matchStartAt = Date.now();
   state.revealedKey = null;
+  state.usedUramuki = false;
 
   scheduleInitialReady(client, state);
   scheduleDecodeBoost(client, state);
@@ -210,8 +249,9 @@ module.exports = {
   endMatch,
   scheduleAfter,
   scheduleTraitCooldown,
+  scheduleTraitCooldownWithRemaining,
   cancelInitialReadyAll,
   startKanshishaCharging,
   updatePanel,
-  startScheduler, // ← 追加（no-op）
+  startScheduler, // ← 互換
 };

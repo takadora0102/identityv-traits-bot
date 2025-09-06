@@ -8,6 +8,7 @@
  * - initialReady: 開始時READYの予約 { key -> timeoutHandle }
  * - traits: 各特質の状態
  * - revealedKey: 判明している特質のkey（UIの出し分けに使用）
+ * - usedUramuki: 裏向きカードを既に使用したか
  * - voice/panel参照: voiceChannelId, panelChannelId, panelMessageId
  */
 
@@ -25,10 +26,11 @@ function createInitialState(guildId) {
     initialReady: {},
 
     traits: {
-      // keyごとに { uses, cooldownEndsAt, cooldownSec, cooldownTimeouts:Set, uiInterval, stacking:{stacks,partial,nextMs,lastTick} } を保持
+      // keyごとに { uses, cooldownEndsAt, cooldownSec, cooldownTimeouts:Set, uiInterval, stacking:{stacks,partial,nextMs,lastTick,interval} } を保持
     },
 
     revealedKey: null,
+    usedUramuki: false,
 
     voiceChannelId: null,
     panelChannelId: null,
@@ -66,6 +68,7 @@ function resetGameState(state) {
   state.matchActive = false;
   state.matchStartAt = null;
   state.revealedKey = null;
+  state.usedUramuki = false;
   cancelAllTimers(state);
 }
 
