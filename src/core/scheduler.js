@@ -196,6 +196,15 @@ function endMatch(state) {
   stopAll(state.guildId);
 }
 
+/**
+ * 互換用 no-op:
+ * 旧実装では ClientReady で定期ジョブを起動していたため、
+ * index.js が呼ぶ startScheduler を残しておく（現実装では不要）。
+ */
+function startScheduler(/* client, guildStates */) {
+  // 何もしない
+}
+
 module.exports = {
   startMatch,
   endMatch,
@@ -204,4 +213,5 @@ module.exports = {
   cancelInitialReadyAll,
   startKanshishaCharging,
   updatePanel,
+  startScheduler, // ← 追加（no-op）
 };
