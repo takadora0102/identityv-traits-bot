@@ -2,9 +2,13 @@
 /**
  * ギルドごとの状態管理
  * - matchActive: 試合中フラグ
+ * - matchStartAt: 試合開始の時刻（ms）
  * - timers: setTimeout のハンドル群（試合終了で一括キャンセル）
- * - voiceChannelId / panel* : 参照用
- * - （必要に応じて拡張: 特質CT など）
+ * - intervals: setInterval のハンドル群（試合終了で一括キャンセル）
+ * - initialReady: 開始時READYの予約 { key -> timeoutHandle }
+ * - traits: 各特質の状態
+ * - revealedKey: 判明している特質のkey（UIの出し分けに使用）
+ * - voice/panel参照: voiceChannelId, panelChannelId, panelMessageId
  */
 
 const guildStates = new Map(); // guildId -> state
@@ -13,15 +17,22 @@ function createInitialState(guildId) {
   return {
     guildId,
     matchActive: false,
+    matchStartAt: null,
+
     timers: new Set(),
+    intervals: new Set(),
+
+    initialReady: {},
+
+    traits: {
+      // keyごとに { uses, cooldownEndsAt, cooldownSec, cooldownTimeouts:Set, uiInterval, stacking:{stacks,partial,nextMs,lastTick} } を保持
+    },
+
+    revealedKey: null,
+
     voiceChannelId: null,
     panelChannelId: null,
     panelMessageId: null,
-
-    // ここから下は任意の拡張（必要に応じて使ってください）
-    traits: {
-      // 例：特質ごとの次回使用可能時刻などを保持したいときに使う
-    },
   };
 }
 
@@ -32,18 +43,36 @@ function getGuildState(guildId) {
   return guildStates.get(guildId);
 }
 
-/** 次の試合に向けて“ゲーム関連のみ”初期化（VC接続やパネル情報は維持） */
-function resetGameState(state) {
-  // 試合関連タイマーをここでは触らない（scheduler側の cancelAll で止める）
-  state.matchActive = false;
-
-  // 特質などゲーム単位の状態があればリセット
+/** タイマー/インターバル一括停止（コールバックは実行されない） */
+function cancelAllTimers(state) {
+  for (const h of state.timers) clearTimeout(h);
+  state.timers.clear();
+  for (const i of state.intervals) clearInterval(i);
+  state.intervals.clear();
+  state.initialReady = {};
+  // 特質ごとの個別タイマーもクリア
+  for (const k of Object.keys(state.traits)) {
+    const t = state.traits[k];
+    if (!t) continue;
+    if (t.cooldownTimeouts) for (const h of t.cooldownTimeouts) clearTimeout(h);
+    if (t.uiInterval) clearInterval(t.uiInterval);
+    if (t.stacking?.interval) clearInterval(t.stacking.interval);
+  }
   state.traits = {};
 }
 
+/** 次の試合に向けた“ゲーム関連のみ”初期化 */
+function resetGameState(state) {
+  state.matchActive = false;
+  state.matchStartAt = null;
+  state.revealedKey = null;
+  cancelAllTimers(state);
+}
+
 module.exports = {
-  guildStates,      // スケジューラや index から参照できるよう公開
+  guildStates,
   createInitialState,
   getGuildState,
   resetGameState,
+  cancelAllTimers,
 };
