@@ -39,6 +39,7 @@ function intervalEvery(state, ms, fn) {
 
 /** UIを更新（Embed+Components を差し替え） */
 async function updatePanel(client, state) {
+  if (!client) return; // 安全ガード
   if (!state.panelChannelId || !state.panelMessageId) return;
   try {
     const ch = await client.channels.fetch(state.panelChannelId);
@@ -96,53 +97,6 @@ function cancelInitialReadyAll(state) {
   }
 }
 
-/** 特質の使用→CT開始（アナウンス予約＋UI更新, uses++） */
-function scheduleTraitCooldown(client, state, key, cooldownSec) {
-  const gid = state.guildId;
-  if (!state.traits[key]) state.traits[key] = { uses: 0, cooldownTimeouts: new Set() };
-  const t = state.traits[key];
-
-  // 既存のCTタイマー/インターバルをクリア
-  if (t.cooldownTimeouts) {
-    for (const h of t.cooldownTimeouts) clearTimeout(h);
-    t.cooldownTimeouts.clear();
-  }
-  if (t.uiInterval) clearInterval(t.uiInterval);
-
-  const now = Date.now();
-  t.uses = (t.uses || 0) + 1; // ← 使用起点
-  t.cooldownSec = cooldownSec;
-  t.cooldownEndsAt = now + cooldownSec * 1000;
-
-  scheduleMarks(client, state, key, cooldownSec, t.cooldownEndsAt);
-
-  // 5秒ごとにUI更新（残りCT表記）
-  t.uiInterval = intervalEvery(state, 5000, () => updatePanel(client, state));
-}
-
-/** 変換などで「残りX秒」から開始（usesは1にして次回はnext扱い） */
-function scheduleTraitCooldownWithRemaining(client, state, key, remainSec) {
-  const gid = state.guildId;
-  if (!state.traits[key]) state.traits[key] = { uses: 0, cooldownTimeouts: new Set() };
-  const t = state.traits[key];
-
-  // 既存のCTタイマー/インターバルをクリア
-  if (t.cooldownTimeouts) {
-    for (const h of t.cooldownTimeouts) clearTimeout(h);
-    t.cooldownTimeouts.clear();
-  }
-  if (t.uiInterval) clearInterval(t.uiInterval);
-
-  const now = Date.now();
-  t.uses = Math.max(1, t.uses || 0);  // ← 以降はnext扱いになるよう最低1に
-  t.cooldownSec = remainSec;
-  t.cooldownEndsAt = now + remainSec * 1000;
-
-  scheduleMarks(client, state, key, remainSec, t.cooldownEndsAt);
-
-  t.uiInterval = intervalEvery(state, 5000, () => updatePanel(client, state));
-}
-
 /** マーク（T-60/30/10/5/0）をスケジュール */
 function scheduleMarks(client, state, key, cooldownSec, endsAt) {
   const gid = state.guildId;
@@ -167,6 +121,53 @@ function scheduleMarks(client, state, key, cooldownSec, endsAt) {
     });
     t.cooldownTimeouts.add(handle);
   }
+}
+
+/** 特質の使用→CT開始（アナウンス予約＋UI更新, uses++） */
+function scheduleTraitCooldown(client, state, key, cooldownSec) {
+  const gid = state.guildId;
+  if (!state.traits[key]) state.traits[key] = { uses: 0, cooldownTimeouts: new Set() };
+  const t = state.traits[key];
+
+  // 既存のCTタイマー/インターバルをクリア
+  if (t.cooldownTimeouts) {
+    for (const h of t.cooldownTimeouts) clearTimeout(h);
+    t.cooldownTimeouts.clear();
+  }
+  if (t.uiInterval) clearInterval(t.uiInterval);
+
+  const now = Date.now();
+  t.uses = (t.uses || 0) + 1; // 使用起点
+  t.cooldownSec = cooldownSec;
+  t.cooldownEndsAt = now + cooldownSec * 1000;
+
+  scheduleMarks(client, state, key, cooldownSec, t.cooldownEndsAt);
+
+  // 5秒ごとにUI更新（残りCT表記）
+  t.uiInterval = intervalEvery(state, 5000, () => updatePanel(client, state));
+}
+
+/** 変換などで「残りX秒」から開始（usesは1にして次回はnext扱い） */
+function scheduleTraitCooldownWithRemaining(client, state, key, remainSec) {
+  const gid = state.guildId;
+  if (!state.traits[key]) state.traits[key] = { uses: 0, cooldownTimeouts: new Set() };
+  const t = state.traits[key];
+
+  // 既存のCTタイマー/インターバルをクリア
+  if (t.cooldownTimeouts) {
+    for (const h of t.cooldownTimeouts) clearTimeout(h);
+    t.cooldownTimeouts.clear();
+  }
+  if (t.uiInterval) clearInterval(t.uiInterval);
+
+  const now = Date.now();
+  t.uses = Math.max(1, t.uses || 0);  // 以降はnext扱いになるよう最低1に
+  t.cooldownSec = remainSec;
+  t.cooldownEndsAt = now + remainSec * 1000;
+
+  scheduleMarks(client, state, key, remainSec, t.cooldownEndsAt);
+
+  t.uiInterval = intervalEvery(state, 5000, () => updatePanel(client, state));
 }
 
 /** 監視者のチャージ進行（所持 N + M/10 表示用, seedで初期状態指定可） */
@@ -198,7 +199,7 @@ function startKanshishaCharging(client, state, seed) {
       return; // 満タン
     }
 
-    const progress = (elapsed + ks.partial * ks.nextMs) / ks.nextMs;
+    const progress = (elapsed + (ks.partial || 0) * ks.nextMs) / ks.nextMs;
     if (progress >= 1) {
       ks.stacks = Math.min(3, ks.stacks + 1);
       ks.partial = 0;
@@ -253,5 +254,5 @@ module.exports = {
   cancelInitialReadyAll,
   startKanshishaCharging,
   updatePanel,
-  startScheduler, // ← 互換
+  startScheduler, // 互換
 };

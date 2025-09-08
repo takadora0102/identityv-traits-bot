@@ -3,7 +3,7 @@
  * 埋め込みとコンポーネント（ボタン/セレクト）を構築
  * - 初期: 「▶ 試合開始」＋ マッチコントロール
  * - 試合中:
- *    - 特質未判明: 特質ボタン行を表示
+ *    - 特質未判明: 特質ボタン行を表示（最大5/行で自動改行）
  *    - 特質判明:   タイマー or 監視者スタック表示＋「再使用した」ボタン＋裏向きカードセレクト
  */
 
@@ -85,18 +85,30 @@ function buildInitialComponents() {
   return [rowStart, rowMatch];
 }
 
-/** 特質ボタンの行（未判明時に表示） */
-function buildTraitButtonsRow() {
+/** 任意配列を chunk 分割 */
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+/** 特質ボタンの行（未判明時に表示）最大5/行で自動改行 */
+function buildTraitButtonsRows() {
   const keys = ['kofun', 'shunkan', 'ikei', 'shinshutsu', 'ijou', 'junshisha', 'kanshisha', 'listen'];
-  const row = new ActionRowBuilder();
-  for (const k of keys) {
-    const bt = new ButtonBuilder()
-      .setCustomId(`trait:${k}`)
-      .setStyle(ButtonStyle.Secondary)
-      .setLabel(TRAITS[k].name);
-    row.addComponents(bt);
+  const rows = [];
+  for (const part of chunk(keys, 5)) {
+    const row = new ActionRowBuilder();
+    for (const k of part) {
+      row.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`trait:${k}`)
+          .setStyle(ButtonStyle.Secondary)
+          .setLabel(TRAITS[k].name)
+      );
+    }
+    rows.push(row);
   }
-  return row;
+  return rows;
 }
 
 /** タイマー表示中の操作行：再使用ボタン */
@@ -120,7 +132,7 @@ function buildUramukiRow(currentKey) {
     .setPlaceholder('裏向きカード：変更先を選択')
     .setMinValues(1)
     .setMaxValues(1)
-    .setOptions(options);
+    .addOptions(options); // ← setOptions ではなく addOptions
 
   return new ActionRowBuilder().addComponents(select);
 }
@@ -131,8 +143,8 @@ function buildInGameComponents(state) {
   const key = state.revealedKey;
 
   if (!key) {
-    // 未判明：特質ボタン行
-    rows.push(buildTraitButtonsRow());
+    // 未判明：特質ボタン（2行に分割）
+    rows.push(...buildTraitButtonsRows());
   } else {
     // 判明：再使用ボタン
     rows.push(buildReuseRow(key));
@@ -144,7 +156,7 @@ function buildInGameComponents(state) {
 
   // 共通のマッチコントロール
   rows.push(buildMatchControls(state));
-  return rows;
+  return rows.slice(0, 5); // Discord上限（5行）ガード
 }
 
 module.exports = {
