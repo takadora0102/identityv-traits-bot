@@ -19,8 +19,6 @@ const { buildEmbed, buildInGameComponents } = require('../core/render');
 const { TRAITS } = require('../core/traits');
 const { enqueueTokens } = require('../voice/player');
 
-function nowSec() { return Math.floor(Date.now() / 1000); }
-
 /** 標準特質の“いまの残りCT（秒）”を取得（なければ0） */
 function getStandardRemainSec(state, key) {
   const t = state.traits[key];
@@ -42,13 +40,12 @@ function getKanshishaRemainToFullMs(state) {
 
 /** 監視者→標準特質へ変換時に使う：90sスケール上の残り秒（丸め） */
 function kanshishaToOldRemainOn90(state) {
-  // 実チャージは最大70sだが、計算スケールは90sとする（ユーザー仕様）
   const remainToFull = getKanshishaRemainToFullMs(state); // 0..70000ms
   const frac = Math.max(0, Math.min(1, remainToFull / 70_000)); // 0..1
   return Math.round(frac * 90); // 0..90
 }
 
-/** 標準特質→監視者へ変換時に使う：90sスケールの“進捗”→ stacks/partial に割り当て */
+/** 標準特質→監視者へ：90sスケールの“進捗”→ stacks/partial に割り当て */
 function seedFromRemainOn90(remainOn90) {
   // 進捗（経過）= 90 - 残り。監視者の上限は70s相当なので clamp。
   const progressed = Math.max(0, Math.min(70, 90 - remainOn90));
@@ -62,14 +59,6 @@ function seedFromRemainOn90(remainOn90) {
   } else {
     return { stacks: 3, partial: 0, nextMs: 30_000 };
   }
-}
-
-/** 現在サイクルの基準CT（秒）を取得（uses=1なら init、それ以降は next） */
-function getCurrentCycleBaseCtSec(state, key) {
-  const trait = TRAITS[key];
-  const t = state.traits[key];
-  if (!t || !trait) return trait?.next ?? 0;
-  return (t.uses === 1) ? (trait.init ?? trait.next ?? 0) : (trait.next ?? 0);
 }
 
 async function handle(interaction, client) {
@@ -110,7 +99,7 @@ async function handle(interaction, client) {
     return interaction.update({ embeds: [embed], components });
   }
 
-  // ===== 特質ボタン（判明） =====
+  // ===== 特質ボタン（判明：使用直後のCTは常に next） =====
   if (id.startsWith('trait:') && !id.startsWith('trait:reuse:')) {
     const key = id.split(':')[1];
     const trait = TRAITS[key];
@@ -135,10 +124,8 @@ async function handle(interaction, client) {
       await updatePanel(client, state);
       return interaction.update({ embeds: [buildEmbed(state)], components: buildInGameComponents(state) });
     } else {
-      // CT開始（初回はinit）
-      const st = state.traits[key] || {};
-      const ct = st.uses > 0 ? trait.next : trait.init;
-
+      // ★ 判明＝使用直後 → CTは「next」を使用
+      const ct = trait.flags?.listen ? Math.min(trait.next, 80) : trait.next;
       scheduleTraitCooldown(client, state, key, ct);
       await updatePanel(client, state);
       return interaction.update({ embeds: [buildEmbed(state)], components: buildInGameComponents(state) });
@@ -161,10 +148,8 @@ async function handle(interaction, client) {
       if ((ks.stacks ?? 0) <= 0) {
         return interaction.reply({ content: '監視者がありません。', flags: MessageFlags.Ephemeral });
       }
-      // 使用アナウンス
       enqueueTokens(state.guildId, ['hunter_ga', trait.token, 'wo_shiyou']);
       ks.stacks = ks.stacks - 1;
-      // 再び充填は startKanshishaCharging() のループで継続
       await updatePanel(client, state);
       return interaction.deferUpdate();
     }
@@ -179,8 +164,8 @@ async function handle(interaction, client) {
     // 使用アナウンス
     enqueueTokens(state.guildId, ['hunter_ga', trait.token, 'wo_shiyou']);
 
-    // 次回以降CTで開始
-    const ct = trait.next;
+    // 次回以降CTで開始（常に next）
+    const ct = trait.flags?.listen ? Math.min(trait.next, 80) : trait.next;
     scheduleTraitCooldown(client, state, key, ct);
     await updatePanel(client, state);
     return interaction.deferUpdate();
@@ -210,60 +195,38 @@ async function handle(interaction, client) {
     const oldTrait = TRAITS[oldKey];
     const newTrait = TRAITS[newKey];
 
-    // --- 旧特質の“残りCT”と“基準CT”を取得 ---
+    // --- 旧特質の“残り”と“基準CT” ---
     let oldRemain = 0;
-    let oldCT = 0;
+    let oldBase = 0;
 
     if (oldTrait.flags?.stacking) {
       // 監視者 → 標準スケール90として扱う
       oldRemain = kanshishaToOldRemainOn90(state); // 0..90
-      oldCT = 90;
+      oldBase = 90;
     } else {
       // 標準特質
       oldRemain = getStandardRemainSec(state, oldKey); // 0..N
-      // 現在サイクルの基準CT（uses=1はinit、それ以降next）
-      oldCT = getCurrentCycleBaseCtSec(state, oldKey);
-      if (oldTrait.flags?.listen) {
-        // Listenの最大80を超えないように（保険）
-        oldCT = Math.min(oldCT, 80);
-        oldRemain = Math.min(oldRemain, 80);
-      }
+      // ★ このサイクルの基準CTは保存済み baseCtSec を優先
+      const tOld = state.traits[oldKey];
+      oldBase = tOld?.baseCtSec ?? (oldTrait.flags?.listen ? Math.min(oldTrait.next, 80) : oldTrait.next);
     }
 
-    // 比率変換 newRemain = round(oldRemain * newCT / oldCT)
-    let newRemain = 0;
-
+    // --- 新特質の“基準CT” ---
+    let newBase;
     if (newTrait.flags?.stacking) {
-      // → 監視者へ：90秒スケールで残りをマップ
-      const f = (oldCT > 0) ? (oldRemain / oldCT) : 0;   // 0..1
-      const remainOn90 = Math.round(f * 90);            // 0..90
-      const seed = seedFromRemainOn90(remainOn90);      // stacks/partial/nextMs
-
-      // 旧特質のCTタイマー類は停止
-      const tOld = state.traits[oldKey];
-      if (tOld?.cooldownTimeouts) for (const h of tOld.cooldownTimeouts) clearTimeout(h);
-      if (tOld?.uiInterval) clearInterval(tOld.uiInterval);
-
-      // 新特質＝監視者としてセット
-      state.revealedKey = newKey;
-      state.usedUramuki = true;
-      startKanshishaCharging(client, state, seed);
-      await updatePanel(client, state);
-      return interaction.update({ embeds: [buildEmbed(state)], components: buildInGameComponents(state) });
+      newBase = 90; // 監視者は90sスケールで扱う（仕様）
     } else {
-      // → 標準特質へ
-      let newCT = getCurrentCycleBaseCtSec(state, newKey);
-      // Listenは最大80
-      if (newTrait.flags?.listen) newCT = Math.min(newCT, 80);
+      newBase = newTrait.flags?.listen ? Math.min(newTrait.next, 80) : newTrait.next;
+    }
 
-      if (oldCT > 0) {
-        newRemain = Math.round((oldRemain * newCT) / oldCT);
-      } else {
-        newRemain = 0;
-      }
-      if (newTrait.flags?.listen) newRemain = Math.min(newRemain, 80);
+    // --- 比率変換 ---
+    if (newTrait.flags?.stacking) {
+      // → 監視者へ：90秒スケールに投影して seed 化
+      const f = (oldBase > 0) ? (oldRemain / oldBase) : 0;   // 0..1
+      const remainOn90 = Math.round(f * 90);                // 0..90
+      const seed = seedFromRemainOn90(remainOn90);
 
-      // 旧特質のCTタイマー類は停止
+      // 旧特質のタイマー類を停止
       const tOld = state.traits[oldKey];
       if (tOld?.cooldownTimeouts) for (const h of tOld.cooldownTimeouts) clearTimeout(h);
       if (tOld?.uiInterval) clearInterval(tOld.uiInterval);
@@ -272,10 +235,36 @@ async function handle(interaction, client) {
         if (ks?.interval) clearInterval(ks.interval);
       }
 
-      // 新特質の“残りnewRemain秒”から開始（usesは1にして以降next扱い）
+      // 新特質＝監視者として開始
       state.revealedKey = newKey;
       state.usedUramuki = true;
-      scheduleTraitCooldownWithRemaining(client, state, newKey, newRemain);
+      startKanshishaCharging(client, state, seed);
+      await updatePanel(client, state);
+      return interaction.update({ embeds: [buildEmbed(state)], components: buildInGameComponents(state) });
+    } else {
+      // → 標準特質へ
+      let newRemain = 0;
+      if (oldBase > 0) {
+        newRemain = Math.round((oldRemain * newBase) / oldBase);
+      } else {
+        newRemain = 0;
+      }
+      // listenの上限
+      if (newTrait.flags?.listen) newRemain = Math.min(newRemain, 80);
+
+      // 旧特質のタイマー類を停止
+      const tOld = state.traits[oldKey];
+      if (tOld?.cooldownTimeouts) for (const h of tOld.cooldownTimeouts) clearTimeout(h);
+      if (tOld?.uiInterval) clearInterval(tOld.uiInterval);
+      if (oldTrait.flags?.stacking) {
+        const ks = state.traits[oldKey]?.stacking;
+        if (ks?.interval) clearInterval(ks.interval);
+      }
+
+      // 新特質の“残りnewRemain秒”から開始（このサイクルの基準は newBase）
+      state.revealedKey = newKey;
+      state.usedUramuki = true;
+      scheduleTraitCooldownWithRemaining(client, state, newKey, newRemain, newBase);
       await updatePanel(client, state);
       return interaction.update({ embeds: [buildEmbed(state)], components: buildInGameComponents(state) });
     }

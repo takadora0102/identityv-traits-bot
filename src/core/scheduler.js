@@ -51,7 +51,7 @@ async function updatePanel(client, state) {
   }
 }
 
-/** 開始時READY（4種）と裏向きカード120sの予約 */
+/** 開始時READY（4種）と裏向きカード120sの予約（通知のみ） */
 function scheduleInitialReady(client, state) {
   const gid = state.guildId;
 
@@ -138,6 +138,7 @@ function scheduleTraitCooldown(client, state, key, cooldownSec) {
 
   const now = Date.now();
   t.uses = (t.uses || 0) + 1; // 使用起点
+  t.baseCtSec = cooldownSec;  // ★ このサイクルの基準CTを保存
   t.cooldownSec = cooldownSec;
   t.cooldownEndsAt = now + cooldownSec * 1000;
 
@@ -147,9 +148,12 @@ function scheduleTraitCooldown(client, state, key, cooldownSec) {
   t.uiInterval = intervalEvery(state, 5000, () => updatePanel(client, state));
 }
 
-/** 変換などで「残りX秒」から開始（usesは1にして次回はnext扱い） */
-function scheduleTraitCooldownWithRemaining(client, state, key, remainSec) {
-  const gid = state.guildId;
+/**
+ * 変換などで「残りX秒」から開始
+ * - uses は最低1にして“次回以降は next 扱い”
+ * - baseSec があればその値をサイクル基準として保存
+ */
+function scheduleTraitCooldownWithRemaining(client, state, key, remainSec, baseSec) {
   if (!state.traits[key]) state.traits[key] = { uses: 0, cooldownTimeouts: new Set() };
   const t = state.traits[key];
 
@@ -161,7 +165,8 @@ function scheduleTraitCooldownWithRemaining(client, state, key, remainSec) {
   if (t.uiInterval) clearInterval(t.uiInterval);
 
   const now = Date.now();
-  t.uses = Math.max(1, t.uses || 0);  // 以降はnext扱いになるよう最低1に
+  t.uses = Math.max(1, t.uses || 0);  // 以降は next 扱いにする
+  t.baseCtSec = baseSec ?? remainSec; // ★ 可能なら“このサイクルの基準CT”を保存
   t.cooldownSec = remainSec;
   t.cooldownEndsAt = now + remainSec * 1000;
 
