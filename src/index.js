@@ -1,78 +1,80 @@
+// src/index.js
+// ─────────────────────────────────────────────────────────────────────────────
+// Entry point: HTTP (health check) + Discord client bootstrap + interaction routing
+// - Health check endpoint for Render (/healthz)
+// - Routes ALL buttons & select menus to interactions/buttons.js (client を渡す)
+// - /setup は commands/setup.js
+// ─────────────────────────────────────────────────────────────────────────────
+
 require('dotenv').config();
+
 const express = require('express');
-const { Client, GatewayIntentBits, Partials, Events } = require('discord.js');
-const { getGuildState } = require('./core/state');
-const { startScheduler } = require('./core/scheduler');
+const { Client, GatewayIntentBits, Events, Partials } = require('discord.js');
 const setupCmd = require('./commands/setup');
-const buttonHandler = require('./interactions/buttons');
-const selectHandler = require('./interactions/selects');
+const buttonHandler = require('./interactions/buttons'); // ボタン＆セレクトはここで一括処理
+const { startScheduler } = require('./core/scheduler');   // 互換用 no-op
+
+// ── HTTP server (Render のヘルスチェック用)
+const app = express();
+
+app.get('/', (_req, res) => res.status(200).send('ok'));
+app.get('/healthz', (_req, res) =>
+  res.status(200).json({ ok: true, uptime: process.uptime() })
+);
+app.get('/favicon.ico', (_req, res) => res.sendStatus(204));
 
 const PORT = process.env.PORT || 3000;
-const TOKEN = process.env.DISCORD_TOKEN;
-
-const { generateDependencyReport } = require('@discordjs/voice');
-console.log(generateDependencyReport());
-
-if (!TOKEN) {
-  console.error('DISCORD_TOKEN が未設定です。');
-  process.exit(1);
-}
-
-// --- Express (健康監視用) ---
-const app = express();
-app.get('/healthz', (_, res) => res.status(200).send('ok'));
-app.get('/', (_, res) => res.status(200).send('IdentityV Traits Bot'));
 app.listen(PORT, () => console.log(`HTTP server listening on :${PORT}`));
 
-// --- Discord Client ---
+// ── Discord client
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildMessages
   ],
-  partials: [Partials.Channel]
+  partials: [Partials.Channel],
 });
 
-client.once(Events.ClientReady, c => {
+client.once(Events.ClientReady, (c) => {
   console.log(`Logged in as ${c.user.tag}`);
-  // 5秒境界スケジューラ開始
-  // stateは内部Mapにあるので、clientからは参照できないが、schedulerにMapを渡す
-  const { guildStates } = require('./_state_accessor');
-  startScheduler(client, guildStates);
+  // 互換：旧実装の名残（現在は no-op）
+  startScheduler(client);
 });
 
-// コマンド
+// Slash Command: /setup
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
     if (interaction.isChatInputCommand()) {
       if (interaction.commandName === 'setup') {
         return setupCmd.execute(interaction);
       }
-    } else if (interaction.isButton()) {
-      return buttonHandler.handle(interaction);
-    } else if (interaction.isStringSelectMenu()) {
-      return selectHandler.handle(interaction);
+    } else if (interaction.isButton() || interaction.isStringSelectMenu()) {
+      // ★ ボタン＆セレクトは一か所へ集約。client を必ず渡す
+      return buttonHandler.handle(interaction, client);
     }
   } catch (e) {
     console.error('Interaction error:', e);
-    if (interaction.isRepliable()) {
-      try { await interaction.reply({ content: 'エラーが発生しました。', ephemeral: true }); } catch {}
-    }
+    try {
+      if (interaction.isRepliable()) {
+        await interaction.reply({ content: 'エラーが発生しました。', flags: 64 /* MessageFlags.Ephemeral */ });
+      }
+    } catch {}
   }
 });
 
-client.login(TOKEN);
+// ── 起動
+const token = process.env.DISCORD_TOKEN;
+if (!token) {
+  console.error('DISCORD_TOKEN が設定されていません。環境変数を確認してください。');
+  process.exit(1);
+}
 
-// --- 内部StateのMap共有ハック（scheduler用） ---
-const { getGuildState: _g } = require('./core/state');
-const _guildStates = new Map();
-// getGuildState をラップしてMapを同期
-const originalGet = _g;
-require.cache[require.resolve('./core/state')].exports.getGuildState = function (gid) {
-  const s = originalGet(gid);
-  _guildStates.set(gid, s);
-  return s;
-};
-// 他モジュールから参照できるように
-require('fs'); // dummy
+client.login(token);
+
+// ── プロセス例外のログ（Render デバッグ用）
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err);
+});
