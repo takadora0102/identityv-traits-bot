@@ -132,7 +132,7 @@ function buildUramukiRow(currentKey) {
     .setPlaceholder('裏向きカード：変更先を選択')
     .setMinValues(1)
     .setMaxValues(1)
-    .addOptions(options); // ← setOptions ではなく addOptions
+    .addOptions(...options); // ← 配列をスプレッドで渡す
 
   return new ActionRowBuilder().addComponents(select);
 }

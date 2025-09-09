@@ -7,6 +7,9 @@
  * - 特質ボタン: 判明→使用アナウンス→CT開始（監視者はスタック表示）
  * - 再使用した: 次のCTへ（監視者は1消費）
  * - 裏向きカード: 変換（比率変換／監視者特例／Listen上限）
+ *
+ * ★ 重要：競合回避のため、インタラクションはすべて deferUpdate() で即ACKし、
+ *          メッセージ更新は updatePanel() のみで行う（=二重更新を廃止）。
  */
 
 const { MessageFlags } = require('discord.js');
@@ -67,47 +70,43 @@ async function handle(interaction, client) {
 
   // ▶ 試合開始
   if (id === 'game:start') {
+    await interaction.deferUpdate();
     state.matchActive = true;
     await startMatch(client, state);
     enqueueTokens(state.guildId, ['shiai_kaishi']); // 「試合開始」
-
-    const embed = buildEmbed(state);
-    const components = buildInGameComponents(state);
-    return interaction.update({ embeds: [embed], components });
+    await updatePanel(client, state);
+    return;
   }
 
   // 🛑 試合終了
   if (id === 'match:end') {
+    await interaction.deferUpdate();
     endMatch(state); // stopAllで再生も停止
     enqueueTokens(state.guildId, ['shiai_shuuryou']); // 「試合終了」
-
-    const embed = buildEmbed(state);
-    const components = buildInGameComponents(state);
-    return interaction.update({ embeds: [embed], components });
+    await updatePanel(client, state);
+    return;
   }
 
   // ▶ 次の試合開始
   if (id === 'match:next') {
+    await interaction.deferUpdate();
     resetGameState(state);
     state.matchActive = true;
-
     await startMatch(client, state);
     enqueueTokens(state.guildId, ['shiai_kaishi']); // 「試合開始」
-
-    const embed = buildEmbed(state);
-    const components = buildInGameComponents(state);
-    return interaction.update({ embeds: [embed], components });
+    await updatePanel(client, state);
+    return;
   }
 
   // ===== 特質ボタン（判明：使用直後のCTは常に next） =====
   if (id.startsWith('trait:') && !id.startsWith('trait:reuse:')) {
+    await interaction.deferUpdate();
+
     const key = id.split(':')[1];
     const trait = TRAITS[key];
     if (!trait) return;
 
-    if (!state.matchActive) {
-      return interaction.reply({ content: '試合が開始されていません。', flags: MessageFlags.Ephemeral });
-    }
+    if (!state.matchActive) return; // 念のため
 
     // 判明直後の使用アナウンス
     enqueueTokens(state.guildId, ['hunter_ga', trait.token, 'wo_shiyou']);
@@ -122,43 +121,44 @@ async function handle(interaction, client) {
       // 監視者：スタック充填の視覚表示だけ（10s→30s, 最大3）
       startKanshishaCharging(client, state);
       await updatePanel(client, state);
-      return interaction.update({ embeds: [buildEmbed(state)], components: buildInGameComponents(state) });
+      return;
     } else {
-      // ★ 判明＝使用直後 → CTは「next」を使用
+      // 判明＝使用直後 → CTは「next」
       const ct = trait.flags?.listen ? Math.min(trait.next, 80) : trait.next;
       scheduleTraitCooldown(client, state, key, ct);
       await updatePanel(client, state);
-      return interaction.update({ embeds: [buildEmbed(state)], components: buildInGameComponents(state) });
+      return;
     }
   }
 
   // ===== 再使用（次のCTへ） =====
   if (id.startsWith('trait:reuse:')) {
+    await interaction.deferUpdate();
+
     const key = id.split(':')[2];
     const trait = TRAITS[key];
     if (!trait) return;
-
-    if (!state.matchActive) {
-      return interaction.reply({ content: '試合が開始されていません。', flags: MessageFlags.Ephemeral });
-    }
+    if (!state.matchActive) return;
 
     // 監視者：1消費（あれば）→ 再充填継続
     if (trait.flags?.stacking) {
       const ks = state.traits[key]?.stacking || {};
       if ((ks.stacks ?? 0) <= 0) {
-        return interaction.reply({ content: '監視者がありません。', flags: MessageFlags.Ephemeral });
+        // 所持0なら何もしない（エフェメラルは使わない）
+        await updatePanel(client, state);
+        return;
       }
       enqueueTokens(state.guildId, ['hunter_ga', trait.token, 'wo_shiyou']);
       ks.stacks = ks.stacks - 1;
       await updatePanel(client, state);
-      return interaction.deferUpdate();
+      return;
     }
 
-    // 通常特質：READY前なら弾く
+    // 通常特質：READY前なら弾く（視覚的には変化しない）
     const st = state.traits[key] || {};
     if (st.cooldownEndsAt && Date.now() < st.cooldownEndsAt) {
-      const remain = Math.ceil((st.cooldownEndsAt - Date.now()) / 1000);
-      return interaction.reply({ content: `まだCT中です（残り ${remain}s）。`, flags: MessageFlags.Ephemeral });
+      await updatePanel(client, state);
+      return;
     }
 
     // 使用アナウンス
@@ -168,28 +168,22 @@ async function handle(interaction, client) {
     const ct = trait.flags?.listen ? Math.min(trait.next, 80) : trait.next;
     scheduleTraitCooldown(client, state, key, ct);
     await updatePanel(client, state);
-    return interaction.deferUpdate();
+    return;
   }
 
   // ===== 裏向きカード（セレクト） =====
   if (interaction.isStringSelectMenu() && id === 'uramuki:select') {
-    if (!state.matchActive) {
-      return interaction.reply({ content: '試合が開始されていません。', flags: MessageFlags.Ephemeral });
-    }
-    if (state.usedUramuki) {
-      return interaction.reply({ content: '裏向きカードは既に使用済みです。', flags: MessageFlags.Ephemeral });
-    }
-    if (!state.revealedKey) {
-      return interaction.reply({ content: '特質が判明してから使用してください。', flags: MessageFlags.Ephemeral });
-    }
+    await interaction.deferUpdate();
+
+    if (!state.matchActive) { await updatePanel(client, state); return; }
+    if (state.usedUramuki)  { await updatePanel(client, state); return; }
+    if (!state.revealedKey) { await updatePanel(client, state); return; }
 
     const oldKey = state.revealedKey;
     const newKey = interaction.values?.[0];
-    if (!newKey || !TRAITS[newKey]) {
-      return interaction.reply({ content: '変更先が不正です。', flags: MessageFlags.Ephemeral });
-    }
-    if (newKey === oldKey) {
-      return interaction.reply({ content: '同じ特質には変更できません。', flags: MessageFlags.Ephemeral });
+    if (!newKey || !TRAITS[newKey] || newKey === oldKey) {
+      await updatePanel(client, state);
+      return;
     }
 
     const oldTrait = TRAITS[oldKey];
@@ -206,7 +200,6 @@ async function handle(interaction, client) {
     } else {
       // 標準特質
       oldRemain = getStandardRemainSec(state, oldKey); // 0..N
-      // ★ このサイクルの基準CTは保存済み baseCtSec を優先
       const tOld = state.traits[oldKey];
       oldBase = tOld?.baseCtSec ?? (oldTrait.flags?.listen ? Math.min(oldTrait.next, 80) : oldTrait.next);
     }
@@ -219,7 +212,7 @@ async function handle(interaction, client) {
       newBase = newTrait.flags?.listen ? Math.min(newTrait.next, 80) : newTrait.next;
     }
 
-    // --- 比率変換 ---
+    // --- 比率変換 & 適用 ---
     if (newTrait.flags?.stacking) {
       // → 監視者へ：90秒スケールに投影して seed 化
       const f = (oldBase > 0) ? (oldRemain / oldBase) : 0;   // 0..1
@@ -240,16 +233,11 @@ async function handle(interaction, client) {
       state.usedUramuki = true;
       startKanshishaCharging(client, state, seed);
       await updatePanel(client, state);
-      return interaction.update({ embeds: [buildEmbed(state)], components: buildInGameComponents(state) });
+      return;
     } else {
       // → 標準特質へ
       let newRemain = 0;
-      if (oldBase > 0) {
-        newRemain = Math.round((oldRemain * newBase) / oldBase);
-      } else {
-        newRemain = 0;
-      }
-      // listenの上限
+      if (oldBase > 0) newRemain = Math.round((oldRemain * newBase) / oldBase);
       if (newTrait.flags?.listen) newRemain = Math.min(newRemain, 80);
 
       // 旧特質のタイマー類を停止
@@ -266,7 +254,7 @@ async function handle(interaction, client) {
       state.usedUramuki = true;
       scheduleTraitCooldownWithRemaining(client, state, newKey, newRemain, newBase);
       await updatePanel(client, state);
-      return interaction.update({ embeds: [buildEmbed(state)], components: buildInGameComponents(state) });
+      return;
     }
   }
 
