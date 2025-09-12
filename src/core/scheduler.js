@@ -1,263 +1,105 @@
 // src/core/scheduler.js
-/**
- * 試合の開始・終了とアナウンスのスケジューリング
- * - 開始時READY（興奮/瞬移/移形/神出鬼没）と 裏向きカード120s
- * - 解読加速（202s）: -60s/-30s/0s を予約
- * - 特質判明→CT開始: T-60(>=60のみ)/T-30/T-10/T-5/T=0 アナウンス
- * - 5秒毎UI更新（Embed/Buttons）
- * - 監視者: 所持N + M/10 の進捗表示（5秒ごと更新）
- */
+// CTスケジューラ：60/30/10/5/3/2/1/0（0は「あり」）・初期CTでは3/2/1をスキップ
+// 120秒で裏向きカード enable + 「裏向きカード あり」アナウンス
 
-const { enqueueTokens, stopAll } = require('../voice/player');
-const { TRAITS, PRIMARY_READY_KEYS } = require('./traits');
-const { cancelAllTimers } = require('./state');
-const { buildEmbed, buildInGameComponents } = require('./render');
+const { updatePanel } = require('./render');
+const { enqueueTokens } = require('../voice/player');
 
-function clampDelay(ms) {
-  const n = Math.floor(ms || 0);
-  return n < 1 ? 1 : n;
+// 互換のため残している（以前のコードで呼んでいる可能性）
+function startScheduler(_client) {
+  // no-op
 }
 
-/** state.timers 管理つき setTimeout */
-function scheduleAfter(state, ms, fn) {
-  const h = setTimeout(() => {
-    state.timers.delete(h);
-    try { fn(); } catch (e) { console.error('[scheduler] task error:', e); }
-  }, clampDelay(ms));
-  state.timers.add(h);
-  return h;
+function scheduleAfter(ms, fn) {
+  const d = Math.max(1, ms | 0);
+  return setTimeout(fn, d);
 }
 
-/** state.intervals 管理つき setInterval */
-function intervalEvery(state, ms, fn) {
-  const i = setInterval(() => {
-    try { fn(); } catch (e) { console.error('[scheduler] interval error:', e); }
-  }, clampDelay(ms));
-  state.intervals.add(i);
-  return i;
-}
-
-/** UIを更新（Embed+Components を差し替え） */
-async function updatePanel(client, state) {
-  if (!client) return; // 安全ガード
-  if (!state.panelChannelId || !state.panelMessageId) return;
-  try {
-    const ch = await client.channels.fetch(state.panelChannelId);
-    const embed = buildEmbed(state);
-    const comps = buildInGameComponents(state);
-    await ch.messages.edit(state.panelMessageId, { embeds: [embed], components: comps });
-  } catch (e) {
-    console.error('[scheduler] updatePanel error:', e?.message || e);
-  }
-}
-
-/** 開始時READY（4種）と裏向きカード120sの予約（通知のみ） */
-function scheduleInitialReady(client, state) {
-  const gid = state.guildId;
-
-  function readyAfter(sec, key) {
-    const trait = TRAITS[key];
-    if (!trait) return;
-    const h = scheduleAfter(state, sec * 1000, () => enqueueTokens(gid, [trait.token, 'tsukae_masu']));
-    state.initialReady[key] = h;
-  }
-
-  // 4特質のREADY
-  readyAfter(TRAITS.kofun.init, 'kofun');
-  readyAfter(TRAITS.shunkan.init, 'shunkan');
-  readyAfter(TRAITS.ikei.init, 'ikei');
-  readyAfter(TRAITS.shinshutsu.init, 'shinshutsu');
-
-  // 裏向きカード（120s）
-  scheduleAfter(state, 120_000, () => enqueueTokens(gid, ['uramuki', 'tsukae_masu']));
-}
-
-/** 解読加速（202s）: -60/-30/0 の予約 */
-function scheduleDecodeBoost(client, state) {
-  const gid = state.guildId;
-  const base = 202_000;
-  const plan = [
-    { at: base - 60_000, tokens: ['kaitoku_kasoku', 'nokori', '60byo'] },
-    { at: base - 30_000, tokens: ['kaitoku_kasoku', 'nokori', '30byo'] },
-    { at: base,          tokens: ['kaitoku_kasoku', 'hatsudou'] },
-  ];
-  for (const p of plan) {
-    scheduleAfter(state, p.at, () => enqueueTokens(gid, p.tokens));
-  }
-}
-
-/** 4特質のREADY予約をすべてキャンセル（判明時の重複防止） */
-function cancelInitialReadyAll(state) {
-  for (const k of PRIMARY_READY_KEYS) {
-    const h = state.initialReady[k];
-    if (h) {
-      clearTimeout(h);
-      delete state.initialReady[k];
-    }
-  }
-}
-
-/** マーク（T-60/30/10/5/0）をスケジュール */
-function scheduleMarks(client, state, key, cooldownSec, endsAt) {
-  const gid = state.guildId;
+// marks: 60/30/10/5/3/2/1/0（残りがそれ以上ある場合のみ予約）
+function scheduleMarks(client, state, trait, endsAtMs, { isInitial = false } = {}) {
   const now = Date.now();
-  const marks = [];
-  if (cooldownSec >= 60) marks.push(60);
-  marks.push(30, 10, 5, 0);
+  const remainSec = Math.ceil((endsAtMs - now) / 1000);
 
-  if (!state.traits[key]) state.traits[key] = { uses: 0, cooldownTimeouts: new Set() };
-  const t = state.traits[key];
+  // 適用可能な刻みを抽出
+  const baseMarks = [60, 30, 10, 5, 3, 2, 1, 0];
+  const marks = baseMarks.filter(m => remainSec >= m);
 
   for (const m of marks) {
-    const when = endsAt - m * 1000;
-    const handle = scheduleAfter(state, when - now, () => {
+    const fireAt = endsAtMs - m * 1000;
+    const wait = fireAt - Date.now();
+
+    scheduleAfter(wait, () => {
+      // 初期CTでは 3/2/1 をスキップ（0のみ鳴らす）
+      if (isInitial && (m === 3 || m === 2 || m === 1)) return;
+
       if (m === 0) {
-        enqueueTokens(gid, [TRAITS[key].token, 'tsukae_masu']);
+        // 完了 → 「（特質）あり」
+        enqueueTokens(state.guildId, [trait.token, 'ari']);
+        updatePanel(client, state);
+      } else if (m >= 5) {
+        // 「特質 残り m 秒」系（既存トークンを利用）
+        enqueueTokens(state.guildId, [trait.token, 'nokori', `${m}byo`]);
       } else {
-        const tokenSec = `${m}byo`;
-        enqueueTokens(gid, [TRAITS[key].token, 'nokori', tokenSec]);
+        // 3/2/1 は1秒カウント
+        const tok = m === 3 ? 'san' : m === 2 ? 'ni' : 'ichi';
+        enqueueTokens(state.guildId, [tok]);
       }
-      if (m === 0) updatePanel(client, state);
     });
-    t.cooldownTimeouts.add(handle);
   }
 }
 
-/** 特質の使用→CT開始（アナウンス予約＋UI更新, uses++） */
-function scheduleTraitCooldown(client, state, key, cooldownSec) {
-  const gid = state.guildId;
-  if (!state.traits[key]) state.traits[key] = { uses: 0, cooldownTimeouts: new Set() };
-  const t = state.traits[key];
-
-  // 既存のCTタイマー/インターバルをクリア
-  if (t.cooldownTimeouts) {
-    for (const h of t.cooldownTimeouts) clearTimeout(h);
-    t.cooldownTimeouts.clear();
-  }
-  if (t.uiInterval) clearInterval(t.uiInterval);
-
-  const now = Date.now();
-  t.uses = (t.uses || 0) + 1; // 使用起点
-  t.baseCtSec = cooldownSec;  // ★ このサイクルの基準CTを保存
-  t.cooldownSec = cooldownSec;
-  t.cooldownEndsAt = now + cooldownSec * 1000;
-
-  scheduleMarks(client, state, key, cooldownSec, t.cooldownEndsAt);
-
-  // 5秒ごとにUI更新（残りCT表記）
-  t.uiInterval = intervalEvery(state, 5000, () => updatePanel(client, state));
-}
-
-/**
- * 変換などで「残りX秒」から開始
- * - uses は最低1にして“次回以降は next 扱い”
- * - baseSec があればその値をサイクル基準として保存
- */
-function scheduleTraitCooldownWithRemaining(client, state, key, remainSec, baseSec) {
-  if (!state.traits[key]) state.traits[key] = { uses: 0, cooldownTimeouts: new Set() };
-  const t = state.traits[key];
-
-  // 既存のCTタイマー/インターバルをクリア
-  if (t.cooldownTimeouts) {
-    for (const h of t.cooldownTimeouts) clearTimeout(h);
-    t.cooldownTimeouts.clear();
-  }
-  if (t.uiInterval) clearInterval(t.uiInterval);
-
-  const now = Date.now();
-  t.uses = Math.max(1, t.uses || 0);  // 以降は next 扱いにする
-  t.baseCtSec = baseSec ?? remainSec; // ★ 可能なら“このサイクルの基準CT”を保存
-  t.cooldownSec = remainSec;
-  t.cooldownEndsAt = now + remainSec * 1000;
-
-  scheduleMarks(client, state, key, remainSec, t.cooldownEndsAt);
-
-  t.uiInterval = intervalEvery(state, 5000, () => updatePanel(client, state));
-}
-
-/** 監視者のチャージ進行（所持 N + M/10 表示用, seedで初期状態指定可） */
-function startKanshishaCharging(client, state, seed) {
-  const key = 'kanshisha';
-  if (!state.traits[key]) state.traits[key] = {};
-  const ks = state.traits[key].stacking = state.traits[key].stacking || {};
-
-  // seed指定または初期化
-  if (seed) {
-    ks.stacks = seed.stacks ?? 0;
-    ks.partial = seed.partial ?? 0;
-    ks.nextMs = seed.nextMs ?? (ks.stacks === 0 ? 10_000 : 30_000);
-  } else {
-    ks.stacks = ks.stacks ?? 0;
-    ks.partial = ks.partial ?? 0;
-    ks.nextMs = ks.stacks === 0 ? 10_000 : 30_000; // 最初は10s、その後30s
-  }
-  ks.lastTick = Date.now();
-
-  if (ks.interval) clearInterval(ks.interval);
-  ks.interval = intervalEvery(state, 5000, () => {
-    const now = Date.now();
-    const elapsed = now - ks.lastTick;
-
-    if (ks.stacks >= 3) {
-      ks.partial = 0;
-      ks.lastTick = now;
-      return; // 満タン
-    }
-
-    const progress = (elapsed + (ks.partial || 0) * ks.nextMs) / ks.nextMs;
-    if (progress >= 1) {
-      ks.stacks = Math.min(3, ks.stacks + 1);
-      ks.partial = 0;
-      ks.lastTick = now;
-      ks.nextMs = 30_000; // 以降は30s毎
-    } else {
-      ks.partial = progress;
-      ks.lastTick = now;
-    }
-
+// 4特質 初期CTのREADY：0秒で「あり」だけ鳴らす（3/2/1はスキップ）
+function scheduleInitialReady(client, state, traitKey, readyAtMs) {
+  const trait = state.traits?.[traitKey];
+  if (!trait) return;
+  scheduleAfter(readyAtMs - Date.now(), () => {
+    enqueueTokens(state.guildId, [trait.token, 'ari']);
     updatePanel(client, state);
   });
 }
 
-/** ▶ 試合開始 */
-async function startMatch(client, state) {
-  cancelAllTimers(state);
-  state.matchActive = true;
-  state.matchStartAt = Date.now();
-  state.revealedKey = null;
-  state.usedUramuki = false;
+// 裏向きカード：120秒で enable + 一度だけ「裏向きカード あり」
+function scheduleUramukiEnable(client, state) {
+  if (!state.matchStartAt) return;
+  const fireAt = state.matchStartAt + 120000;
+  if (Date.now() >= fireAt) return; // 既に過ぎている
 
-  scheduleInitialReady(client, state);
-  scheduleDecodeBoost(client, state);
-
-  // UI初期表示
-  await updatePanel(client, state);
+  scheduleAfter(fireAt - Date.now(), () => {
+    // 既に使っていなければアナウンス
+    if (!state.usedUramuki) {
+      enqueueTokens(state.guildId, ['uramuki', 'ari']);
+    }
+    updatePanel(client, state);
+  });
 }
 
-/** 🛑 試合終了：全停止（VCには待機） */
-function endMatch(state) {
-  state.matchActive = false;
-  cancelAllTimers(state);
-  stopAll(state.guildId);
-}
+// 汎用：特質CTを開始（残りからでも新規でも）
+function startTraitCooldown(client, state, traitKey, cooldownSec, { isInitial = false } = {}) {
+  const trait = state.traits?.[traitKey];
+  if (!trait) return;
 
-/**
- * 互換用 no-op:
- * 旧実装では ClientReady で定期ジョブを起動していたため、
- * index.js が呼ぶ startScheduler を残しておく（現実装では不要）。
- */
-function startScheduler(/* client, guildStates */) {
-  // 何もしない
+  const now = Date.now();
+  const endsAt = now + cooldownSec * 1000;
+
+  // 5秒ごとの視覚タイマー更新
+  if (trait.uiInterval) clearInterval(trait.uiInterval);
+  trait.endsAt = endsAt;
+  trait.uiInterval = setInterval(() => {
+    // 試合が終わっていたら止める
+    if (!state.matchActive) {
+      clearInterval(trait.uiInterval);
+      trait.uiInterval = null;
+      return;
+    }
+    updatePanel(client, state);
+  }, 5000);
+
+  scheduleMarks(client, state, trait, endsAt, { isInitial });
 }
 
 module.exports = {
-  startMatch,
-  endMatch,
-  scheduleAfter,
-  scheduleTraitCooldown,
-  scheduleTraitCooldownWithRemaining,
-  cancelInitialReadyAll,
-  startKanshishaCharging,
-  updatePanel,
-  startScheduler, // 互換
+  startScheduler,
+  scheduleInitialReady,
+  scheduleUramukiEnable,
+  startTraitCooldown,
 };

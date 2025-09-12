@@ -1,166 +1,272 @@
 // src/core/render.js
-/**
- * 埋め込みとコンポーネント（ボタン/セレクト）を構築
- * - 初期: 「▶ 試合開始」＋ マッチコントロール
- * - 試合中:
- *    - 特質未判明: 特質ボタン行を表示（最大5/行で自動改行）
- *    - 特質判明:   タイマー or 監視者スタック表示＋「再使用した」ボタン＋裏向きカードセレクト
- */
+// UI組み立て・パネル更新（ランク/マルチ分岐、裏向きカード常時表示（120秒でenable））
 
 const {
-  EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
   StringSelectMenuBuilder,
+  EmbedBuilder,
 } = require('discord.js');
-const { TRAITS, URAMUKI_CHOICES } = require('./traits');
 
-function secsRemaining(msUntil) {
-  const r = Math.ceil((msUntil - Date.now()) / 1000);
-  return r < 0 ? 0 : r;
+// ---- ユーティリティ
+function fmtSec(n) {
+  return Math.max(0, Math.ceil(n));
 }
+function now() { return Date.now(); }
 
-function buildEmbed(state) {
-  const lines = [];
+// ---- 固定：裏向きカードの候補（特質キー = 内部キー）
+const URAMUKI_OPTIONS = [
+  { key: 'kofun',       label: '興奮' },
+  { key: 'shunkan',     label: '瞬間移動' },
+  { key: 'ikei',        label: '移形' },
+  { key: 'shinshutsu',  label: '神出鬼没' },
+  { key: 'kanshi',      label: '監視者' },
+  { key: 'junshi',      label: '巡視者' },
+  { key: 'ijou',        label: '異常' },
+  { key: 'listen',      label: 'リッスン' },
+];
 
-  if (!state.matchActive) {
-    lines.push('**ステータス:** 待機中');
-    lines.push('・「▶ 次の試合開始」を押して準備してください。');
-  } else {
-    lines.push('**ステータス:** 試合中');
-
-    // 判明しているなら、残りCT or 監視者スタックを表示
-    const key = state.revealedKey;
-    if (key) {
-      const trait = TRAITS[key];
-      if (trait?.flags?.stacking) {
-        const ks = state.traits[key]?.stacking || {};
-        const tenths = Math.floor((ks.partial || 0) * 10);
-        lines.push(`**${trait.name}**: 所持 **${ks.stacks ?? 0} + ${tenths}/10**（最大3）`);
-      } else {
-        const t = state.traits[key];
-        const remain = t?.cooldownEndsAt ? secsRemaining(t.cooldownEndsAt) : 0;
-        lines.push(`**${trait.name}**: 残り **${remain}s**`);
-      }
-    } else {
-      lines.push('・特質が判明していません。特質ボタンで判明を記録できます。');
-    }
-  }
-
-  return new EmbedBuilder()
-    .setColor(state.matchActive ? 0x00c853 : 0x607d8b)
-    .setTitle('Identity V 特質CTコントローラ')
-    .setDescription(lines.join('\n'))
-    .setFooter({ text: 'VOICEVOX:ずんだもん' })
-    .setTimestamp(new Date());
-}
-
-/** 「🛑 試合終了」「▶ 次の試合開始」行 */
-function buildMatchControls(state) {
-  const endBtn = new ButtonBuilder()
-    .setCustomId('match:end')
-    .setStyle(ButtonStyle.Danger)
-    .setLabel('🛑 試合終了')
-    .setDisabled(!state.matchActive);
-
-  const nextBtn = new ButtonBuilder()
-    .setCustomId('match:next')
-    .setStyle(ButtonStyle.Success)
-    .setLabel('▶ 次の試合開始')
-    .setDisabled(false);
-
-  return new ActionRowBuilder().addComponents(endBtn, nextBtn);
-}
-
-/** 初期（/setup直後）に出す構成：まずは「▶ 試合開始」とマッチコントロール */
-function buildInitialComponents() {
-  const rowStart = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('game:start')
-      .setStyle(ButtonStyle.Primary)
-      .setLabel('▶ 試合開始')
-  );
-  const rowMatch = buildMatchControls({ matchActive: false });
-  return [rowStart, rowMatch];
-}
-
-/** 任意配列を chunk 分割 */
-function chunk(arr, size) {
-  const out = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
-
-/** 特質ボタンの行（未判明時に表示）最大5/行で自動改行 */
-function buildTraitButtonsRows() {
-  const keys = ['kofun', 'shunkan', 'ikei', 'shinshutsu', 'ijou', 'junshisha', 'kanshisha', 'listen'];
-  const rows = [];
-  for (const part of chunk(keys, 5)) {
-    const row = new ActionRowBuilder();
-    for (const k of part) {
-      row.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`trait:${k}`)
-          .setStyle(ButtonStyle.Secondary)
-          .setLabel(TRAITS[k].name)
-      );
-    }
-    rows.push(row);
-  }
-  return rows;
-}
-
-/** タイマー表示中の操作行：再使用ボタン */
-function buildReuseRow(key) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`trait:reuse:${key}`)
-      .setStyle(ButtonStyle.Primary)
-      .setLabel('再使用した')
-  );
-}
-
-/** 裏向きカードセレクト（判明中かつ未使用時に表示） */
-function buildUramukiRow(currentKey) {
-  const options = URAMUKI_CHOICES
-    .filter(k => k !== currentKey)
-    .map(k => ({ label: TRAITS[k].name, value: k }));
+function buildUramukiRow(state) {
+  const enabled = state.matchActive &&
+                  !state.usedUramuki &&
+                  state.matchStartAt &&
+                  now() >= state.matchStartAt + 120000;
 
   const select = new StringSelectMenuBuilder()
     .setCustomId('uramuki:select')
-    .setPlaceholder('裏向きカード：変更先を選択')
-    .setMinValues(1)
-    .setMaxValues(1)
-    .addOptions(...options); // ← 配列をスプレッドで渡す
+    .setPlaceholder(enabled ? '裏向きカードで特質を変更' : '裏向きカード（120秒後に利用可）')
+    .setDisabled(!enabled)
+    .addOptions(
+      URAMUKI_OPTIONS.map(o => ({
+        label: o.label,
+        value: o.key,
+        description: `変更後の特質：${o.label}`,
+      }))
+    );
 
   return new ActionRowBuilder().addComponents(select);
 }
 
-/** 試合中のコンポーネント構成 */
-function buildInGameComponents(state) {
-  const rows = [];
-  const key = state.revealedKey;
+// ---- ランク/マルチ 入口（/setup直後）
+function buildEntryRows() {
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('mode:rank')
+      .setLabel('ランク（集計あり）')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('mode:multi')
+      .setLabel('マルチ（集計なし）')
+      .setStyle(ButtonStyle.Secondary),
+  );
+  return [row];
+}
 
-  if (!key) {
-    // 未判明：特質ボタン（2行に分割）
-    rows.push(...buildTraitButtonsRows());
+function buildEntryEmbed(guildId, state) {
+  const desc = state.mode
+    ? `**現在モード:** ${state.mode === 'rank' ? 'ランク' : 'マルチ'}`
+    : '試合モードを選択してください。';
+  return new EmbedBuilder()
+    .setColor(0xC863)
+    .setTitle('Identity V 特質CTコントローラ')
+    .setDescription(desc)
+    .setFooter({ text: `guild=${guildId}` })
+    .setTimestamp(new Date());
+}
+
+// ---- ランクの進捗表示（MAP/BAN/PICK）簡易サマリ
+function buildRankProgressEmbed(guildId, state) {
+  const lines = [];
+  lines.push(`**モード:** ランク`);
+  lines.push(`**マップ:** ${state.rank?.mapName ?? '未選択'}`);
+  const bansSurv = (state.rank?.bansSurv ?? []).join(' / ') || '—';
+  const bansHun  = (state.rank?.bansHun  ?? []).join(' / ') || '—';
+  lines.push(`**サバBAN (${(state.rank?.bansSurv ?? []).length}/3):** ${bansSurv}`);
+  lines.push(`**ハンBAN (${(state.rank?.bansHun ?? []).length}/3):** ${bansHun}`);
+  const picksSurv = (state.rank?.picksSurv ?? []).join(' / ') || '—';
+  lines.push(`**サバPICK (${(state.rank?.picksSurv ?? []).length}/4):** ${picksSurv}`);
+
+  return new EmbedBuilder()
+    .setColor(0xC863)
+    .setTitle('Identity V 特質CTコントローラ')
+    .setDescription(lines.join('\n'))
+    .setFooter({ text: `guild=${guildId}` })
+    .setTimestamp(new Date());
+}
+
+function buildRankRows(state) {
+  // ランク入力の段階的UI
+  const rows = [];
+  const r = state.rank || {};
+  // 段階：map -> bans -> picks -> ready
+  if (!r.mapName) {
+    // マップ選択用セレクト
+    const maps = [
+      '軍需工場','聖心病院','赤の教会','湖景村','月の河公園','レオの思い出','永眠町','中華街','罪の森'
+    ];
+    const sel = new StringSelectMenuBuilder()
+      .setCustomId('rank:map:select')
+      .setPlaceholder('マップを選択')
+      .addOptions(maps.map(m => ({ label: m, value: m })));
+    rows.push(new ActionRowBuilder().addComponents(sel));
+  } else if ((r.bansSurv?.length ?? 0) < 3 || (r.bansHun?.length ?? 0) < 3) {
+    // BAN 追加/取り消し/次へ
+    rows.push(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('rank:ban:add:surv').setLabel('サバBANを追加').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('rank:ban:add:hunter').setLabel('ハンBANを追加').setStyle(ButtonStyle.Secondary),
+      ),
+    );
+    rows.push(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('rank:ban:undo:surv').setLabel('サバBAN 最後を取り消し').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('rank:ban:undo:hunter').setLabel('ハンBAN 最後を取り消し').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder()
+          .setCustomId('rank:next:picks')
+          .setLabel('次へ（PICK）')
+          .setStyle(ButtonStyle.Success)
+          .setDisabled(!((r.bansSurv?.length ?? 0) === 3 && (r.bansHun?.length ?? 0) === 3)),
+      ),
+    );
+  } else if ((r.picksSurv?.length ?? 0) < 4) {
+    rows.push(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('rank:pick:add:surv').setLabel('サバPICKを追加').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('rank:pick:undo:surv').setLabel('サバPICK 最後を取り消し').setStyle(ButtonStyle.Danger),
+      ),
+    );
+    rows.push(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('game:start')
+          .setLabel('▶ 試合開始')
+          .setStyle(ButtonStyle.Success)
+          .setDisabled(!((r.picksSurv?.length ?? 0) === 4)),
+      ),
+    );
   } else {
-    // 判明：再使用ボタン
-    rows.push(buildReuseRow(key));
-    // 裏向きカード（未使用時のみ）
-    if (!state.usedUramuki) {
-      rows.push(buildUramukiRow(key));
+    // すべて埋まった → 試合開始可
+    rows.push(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('game:start')
+          .setLabel('▶ 試合開始')
+          .setStyle(ButtonStyle.Success),
+      ),
+    );
+  }
+  return rows.slice(0, 5);
+}
+
+// ---- マルチ（従来どおり開始ボタン）
+function buildMultiRows() {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('game:start')
+        .setLabel('▶ 試合開始')
+        .setStyle(ButtonStyle.Success),
+    ),
+  ];
+}
+
+// ---- 試合中UI（制御 + 裏向き + 特質操作は既存ボタン群を統合している想定）
+function buildInGameEmbed(guildId, state) {
+  const lines = [];
+  lines.push('**ステータス:** 試合中');
+  if (!state.revealedKey) {
+    lines.push('・特質が判明していません。特質ボタンで判明を記録できます。');
+  } else {
+    lines.push(`・判明特質: ${state.revealedLabel ?? state.revealedKey}`);
+  }
+  return new EmbedBuilder()
+    .setColor(0xC863)
+    .setTitle('Identity V 特質CTコントローラ')
+    .setDescription(lines.join('\n'))
+    .setFooter({ text: `guild=${guildId}` })
+    .setTimestamp(new Date());
+}
+
+function buildInGameRows(state) {
+  const rows = [];
+
+  // 上段：試合終了 / 次の試合開始
+  rows.push(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('game:end').setLabel('🛑 試合終了').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('game:next').setLabel('▶ 次の試合開始').setStyle(ButtonStyle.Secondary),
+  ));
+
+  // 中段：特質操作ボタン（既存の構成に合わせて適宜追加してください）
+  // ここでは例として「判明済み特質を再使用」ボタンだけ置く（実装は buttons.js 側）
+  rows.push(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('trait:used').setLabel('特質を使用').setStyle(ButtonStyle.Primary),
+  ));
+
+  // 下段：裏向きカード（常時表示、120sでenable）
+  rows.push(buildUramukiRow(state));
+
+  return rows.slice(0, 5);
+}
+
+// ---- メイン：状態に応じた描画
+function composePayload(guildId, state) {
+  if (!state.matchActive) {
+    if (state.mode === 'rank') {
+      return {
+        embeds: [buildRankProgressEmbed(guildId, state)],
+        components: buildRankRows(state),
+      };
+    }
+    if (state.mode === 'multi') {
+      return {
+        embeds: [buildEntryEmbed(guildId, state)],
+        components: buildMultiRows(),
+      };
+    }
+    // モード未選択
+    return {
+      embeds: [buildEntryEmbed(guildId, state)],
+      components: buildEntryRows(),
+    };
+  }
+
+  // 試合中
+  return {
+    embeds: [buildInGameEmbed(guildId, state)],
+    components: buildInGameRows(state),
+  };
+}
+
+// ---- パネル更新
+async function updatePanel(client, state, interaction) {
+  const payload = composePayload(state.guildId, state);
+
+  // interaction 経由の更新が安全
+  if (interaction && interaction.isRepliable()) {
+    try {
+      await interaction.update(payload);
+      return;
+    } catch (e) {
+      // 失敗したら下のメッセージ編集へフォールバック
     }
   }
 
-  // 共通のマッチコントロール
-  rows.push(buildMatchControls(state));
-  return rows.slice(0, 5); // Discord上限（5行）ガード
+  // 既存メッセージの編集
+  if (client && state.panelChannelId && state.panelMessageId) {
+    try {
+      const ch = client.channels.cache.get(state.panelChannelId);
+      if (!ch) return;
+      const msg = await ch.messages.fetch(state.panelMessageId);
+      await msg.edit(payload);
+    } catch (e) {
+      console.error('[render] updatePanel edit error', e);
+    }
+  }
 }
 
 module.exports = {
-  buildEmbed,
-  buildInitialComponents,
-  buildInGameComponents,
+  updatePanel,
+  buildUramukiRow,
+  composePayload, // デバッグ用途
 };

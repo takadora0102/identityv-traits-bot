@@ -1,265 +1,252 @@
 // src/interactions/buttons.js
-/**
- * ボタン/セレクトのインタラクションハンドラ
- * - ▶ 試合開始: 試合開始スケジュール＋「試合開始」アナウンス
- * - 🛑 試合終了: 全停止＋「試合終了」アナウンス
- * - ▶ 次の試合開始: 状態リセット→再スケジュール＋「試合開始」
- * - 特質ボタン: 判明→使用アナウンス→CT開始（監視者はスタック表示）
- * - 再使用した: 次のCTへ（監視者は1消費）
- * - 裏向きカード: 変換（比率変換／監視者特例／Listen上限）
- *
- * ★ 重要：競合回避のため、インタラクションはすべて deferUpdate() で即ACKし、
- *          メッセージ更新は updatePanel() のみで行う（=二重更新を廃止）。
- */
+// すべてのボタン / セレクト / モーダル をここで捌く（index.js から client を渡す）
+// - ランク/マルチ分岐
+// - 試合開始・終了・次の試合
+// - 裏向きカード（開始時から表示・120秒でenable）
+// - 特質使用（再使用トリガ）
+// - ランクの段階UIは rank.js に委譲
 
-const { MessageFlags } = require('discord.js');
+const { updatePanel } = require('../core/render');
+const rank = require('./rank');
 const {
-  startMatch, endMatch, scheduleTraitCooldown, scheduleTraitCooldownWithRemaining,
-  cancelInitialReadyAll, startKanshishaCharging, updatePanel
+  scheduleInitialReady,
+  scheduleUramukiEnable,
+  startTraitCooldown,
 } = require('../core/scheduler');
-const { getGuildState, resetGameState } = require('../core/state');
-const { buildEmbed, buildInGameComponents } = require('../core/render');
-const { TRAITS } = require('../core/traits');
 const { enqueueTokens } = require('../voice/player');
 
-/** 標準特質の“いまの残りCT（秒）”を取得（なければ0） */
-function getStandardRemainSec(state, key) {
-  const t = state.traits[key];
-  if (!t?.cooldownEndsAt) return 0;
-  const ms = t.cooldownEndsAt - Date.now();
-  return ms > 0 ? Math.ceil(ms / 1000) : 0;
-}
+// 特質テーブル（抜粋例：実プロジェクトの既存 state.traits を利用してください）
+const NEXT_CT = { // nextサイクル（通常CT）
+  kofun: 100,        // 興奮
+  shunkan: 100,      // 瞬間移動
+  ikei: 100,         // 移形
+  shinshutsu: 150,   // 神出鬼没
+  ijou: 90,          // 異常
+  junshi: 90,        // 巡視者
+  kanshi: 90,        // 監視者（90秒スケール）
+  listen: 80,        // リッスン（上限80）
+};
+const INITIAL_CT = { // 開始時CT（初回のみ）
+  kofun: 40,
+  shunkan: 45,
+  ikei: 50,
+  shinshutsu: 60,
+  ijou: 40,
+  junshi: 30,
+  kanshi: 10,
+  listen: 20,
+};
 
-/** 監視者の“満タン（3スタック）までの残り時間”を算出（ms, 0..） */
-function getKanshishaRemainToFullMs(state) {
-  const ks = state.traits.kanshisha?.stacking;
-  if (!ks) return 0; // 未開始＝満タン扱い
-  if (ks.stacks >= 3) return 0;
-
-  const remainToNext = (1 - (ks.partial || 0)) * (ks.nextMs || 30_000); // いまの1個分
-  const remainAfter = Math.max(0, (3 - (ks.stacks + 1))) * 30_000;      // その後の30sずつ
-  return Math.max(0, Math.round(remainToNext + remainAfter));
-}
-
-/** 監視者→標準特質へ変換時に使う：90sスケール上の残り秒（丸め） */
-function kanshishaToOldRemainOn90(state) {
-  const remainToFull = getKanshishaRemainToFullMs(state); // 0..70000ms
-  const frac = Math.max(0, Math.min(1, remainToFull / 70_000)); // 0..1
-  return Math.round(frac * 90); // 0..90
-}
-
-/** 標準特質→監視者へ：90sスケールの“進捗”→ stacks/partial に割り当て */
-function seedFromRemainOn90(remainOn90) {
-  // 進捗（経過）= 90 - 残り。監視者の上限は70s相当なので clamp。
-  const progressed = Math.max(0, Math.min(70, 90 - remainOn90));
-
-  if (progressed < 10) {
-    return { stacks: 0, partial: progressed / 10, nextMs: 10_000 };
-  } else if (progressed < 40) {
-    return { stacks: 1, partial: (progressed - 10) / 30, nextMs: 30_000 };
-  } else if (progressed < 70) {
-    return { stacks: 2, partial: (progressed - 40) / 30, nextMs: 30_000 };
-  } else {
-    return { stacks: 3, partial: 0, nextMs: 30_000 };
+function getGuildState(client, interaction) {
+  // 既存の state 管理に合わせて取得してください（例では client にぶら下げる）
+  client.__guildStates ||= new Map();
+  const gid = interaction.guildId;
+  if (!client.__guildStates.has(gid)) {
+    client.__guildStates.set(gid, {
+      guildId: gid,
+      panelChannelId: interaction.channelId,
+      panelMessageId: interaction.message?.id,
+      mode: null,             // 'rank' | 'multi'
+      matchActive: false,
+      matchStartAt: null,
+      usedUramuki: false,
+      revealedKey: null,
+      revealedLabel: null,
+      // ランク用ステート
+      rank: {
+        mapName: null,
+        bansSurv: [],
+        bansHun: [],
+        picksSurv: [],
+        pickHunter: null,
+        matchId: null, // DBの行ID
+      },
+      // 特質構造（音声トークン名と endsAt 管理）
+      traits: {
+        kofun:      { token: 'kofun',      endsAt: 0, uiInterval: null },
+        shunkan:    { token: 'shunkan',    endsAt: 0, uiInterval: null },
+        ikei:       { token: 'ikei',       endsAt: 0, uiInterval: null },
+        shinshutsu: { token: 'shinshutsu', endsAt: 0, uiInterval: null },
+        ijou:       { token: 'ijou',       endsAt: 0, uiInterval: null },
+        junshi:     { token: 'junshi',     endsAt: 0, uiInterval: null },
+        kanshi:     { token: 'kanshi',     endsAt: 0, uiInterval: null },
+        listen:     { token: 'listen',     endsAt: 0, uiInterval: null },
+      },
+    });
   }
+  const st = client.__guildStates.get(gid);
+  // 最新のメッセージIDを覚えておく（update用）
+  if (interaction.message?.id) st.panelMessageId = interaction.message.id;
+  if (interaction.channelId) st.panelChannelId = interaction.channelId;
+  return st;
+}
+
+// 変換比率（裏向きカード）
+// 新残りCT ＝ 旧残りCT × (新nextCT / 旧nextCT)
+// 特例：listen は80s上限。監視者は90s基準に投影。
+function convertRemaining(oldKey, newKey, remainSec) {
+  const base = (k) => {
+    if (k === 'listen') return 80;
+    if (k === 'kanshi') return 90;
+    return NEXT_CT[k] ?? 100;
+  };
+  const oldBase = base(oldKey);
+  const newBase = base(newKey);
+  if (oldBase <= 0 || newBase <= 0) return Math.max(0, Math.round(remainSec));
+  let res = Math.round((remainSec * newBase) / oldBase);
+  if (newKey === 'listen') res = Math.min(res, 80);
+  return Math.max(0, res);
+}
+
+// 初期CTの予約（4特質 + 裏向きカード120s enable）
+function scheduleMatchStart(client, state) {
+  state.matchActive = true;
+  state.matchStartAt = Date.now();
+  state.usedUramuki = false;
+
+  // 初期CTのREADY（0秒で「あり」だけ鳴らす）
+  for (const k of ['kofun','shunkan','ikei','shinshutsu']) {
+    const readyAt = state.matchStartAt + INITIAL_CT[k] * 1000;
+    scheduleInitialReady(client, state, k, readyAt);
+  }
+
+  // 裏向きカード：120秒で enable + 「あり」
+  scheduleUramukiEnable(client, state);
+
+  // 解読加速（60/30/0のアナウンス）= 202秒
+  const accelAt = state.matchStartAt + 202000;
+  const notify = (sec) => {
+    const when = accelAt - sec * 1000;
+    const wait = when - Date.now();
+    setTimeout(() => {
+      if (!state.matchActive) return;
+      if (sec === 0) enqueueTokens(state.guildId, ['kaidoku_kasoku', 'hatsudou']); // 任意の音声構成
+      else enqueueTokens(state.guildId, ['kaidoku_kasoku', 'nokori', `${sec}byo`]);
+    }, Math.max(1, wait | 0));
+  };
+  for (const m of [60, 30, 0]) notify(m);
 }
 
 async function handle(interaction, client) {
-  const state = getGuildState(interaction.guildId);
+  const state = getGuildState(client, interaction);
+
+  // どのタイプでもまずは defer（セレクト/ボタン/モーダル問わずOK）
+  try {
+    if (interaction.isButton() || interaction.isStringSelectMenu()) {
+      await interaction.deferUpdate();
+    } else if (interaction.isModalSubmit()) {
+      await interaction.deferReply({ ephemeral: true });
+    }
+  } catch {}
+
+  // ランク専用の分岐（map / ban / pick / result など）
+  if (await rank.route(interaction, client, state)) {
+    // rank.js が処理した
+    return;
+  }
+
+  // 共通ボタン・セレクト
   const id = interaction.customId;
 
-  // ▶ 試合開始
-  if (id === 'game:start') {
-    await interaction.deferUpdate();
-    state.matchActive = true;
-    await startMatch(client, state);
+  // 入口：モード選択
+  if (interaction.isButton() && id === 'mode:rank') {
+    state.mode = 'rank';
+    state.matchActive = false;
+    state.rank = state.rank || { mapName: null, bansSurv: [], bansHun: [], picksSurv: [], pickHunter: null, matchId: null };
+    return updatePanel(client, state, interaction);
+  }
+  if (interaction.isButton() && id === 'mode:multi') {
+    state.mode = 'multi';
+    state.matchActive = false;
+    return updatePanel(client, state, interaction);
+  }
+
+  // 試合制御
+  if (interaction.isButton() && id === 'game:start') {
+    // ランク：DBへの createMatch は rank.js 側で行う（必要に応じて）
     enqueueTokens(state.guildId, ['shiai_kaishi']); // 「試合開始」
-    await updatePanel(client, state);
-    return;
+    scheduleMatchStart(client, state);
+    return updatePanel(client, state, interaction);
   }
 
-  // 🛑 試合終了
-  if (id === 'match:end') {
-    await interaction.deferUpdate();
-    endMatch(state); // stopAllで再生も停止
-    enqueueTokens(state.guildId, ['shiai_shuuryou']); // 「試合終了」
-    await updatePanel(client, state);
-    return;
-  }
-
-  // ▶ 次の試合開始
-  if (id === 'match:next') {
-    await interaction.deferUpdate();
-    resetGameState(state);
-    state.matchActive = true;
-    await startMatch(client, state);
-    enqueueTokens(state.guildId, ['shiai_kaishi']); // 「試合開始」
-    await updatePanel(client, state);
-    return;
-  }
-
-  // ===== 特質ボタン（判明：使用直後のCTは常に next） =====
-  if (id.startsWith('trait:') && !id.startsWith('trait:reuse:')) {
-    await interaction.deferUpdate();
-
-    const key = id.split(':')[1];
-    const trait = TRAITS[key];
-    if (!trait) return;
-
-    if (!state.matchActive) return; // 念のため
-
-    // 判明直後の使用アナウンス
-    enqueueTokens(state.guildId, ['hunter_ga', trait.token, 'wo_shiyou']);
-
-    // 4特質の開始時READY予約は以降キャンセル
-    cancelInitialReadyAll(state);
-
-    // UI状態
-    state.revealedKey = key;
-
-    if (trait.flags?.stacking) {
-      // 監視者：スタック充填の視覚表示だけ（10s→30s, 最大3）
-      startKanshishaCharging(client, state);
-      await updatePanel(client, state);
-      return;
-    } else {
-      // 判明＝使用直後 → CTは「next」
-      const ct = trait.flags?.listen ? Math.min(trait.next, 80) : trait.next;
-      scheduleTraitCooldown(client, state, key, ct);
-      await updatePanel(client, state);
-      return;
+  if (interaction.isButton() && id === 'game:end') {
+    // 試合終了：音声 & 状態リセット（ランクは rank.js 側で結果入力 → save）
+    enqueueTokens(state.guildId, ['shiai_shuuryou']);
+    state.matchActive = false;
+    state.matchStartAt = null;
+    state.usedUramuki = false;
+    state.revealedKey = null;
+    state.revealedLabel = null;
+    // 特質タイマー停止
+    for (const t of Object.values(state.traits)) {
+      if (t.uiInterval) clearInterval(t.uiInterval);
+      t.uiInterval = null; t.endsAt = 0;
     }
+    return updatePanel(client, state, interaction);
   }
 
-  // ===== 再使用（次のCTへ） =====
-  if (id.startsWith('trait:reuse:')) {
-    await interaction.deferUpdate();
-
-    const key = id.split(':')[2];
-    const trait = TRAITS[key];
-    if (!trait) return;
-    if (!state.matchActive) return;
-
-    // 監視者：1消費（あれば）→ 再充填継続
-    if (trait.flags?.stacking) {
-      const ks = state.traits[key]?.stacking || {};
-      if ((ks.stacks ?? 0) <= 0) {
-        // 所持0なら何もしない（エフェメラルは使わない）
-        await updatePanel(client, state);
-        return;
-      }
-      enqueueTokens(state.guildId, ['hunter_ga', trait.token, 'wo_shiyou']);
-      ks.stacks = ks.stacks - 1;
-      await updatePanel(client, state);
-      return;
+  if (interaction.isButton() && id === 'game:next') {
+    // 待機へ戻す（入口へ）
+    state.mode = null;
+    state.rank = { mapName: null, bansSurv: [], bansHun: [], picksSurv: [], pickHunter: null, matchId: null };
+    state.matchActive = false;
+    state.matchStartAt = null;
+    state.usedUramuki = false;
+    state.revealedKey = null;
+    state.revealedLabel = null;
+    for (const t of Object.values(state.traits)) {
+      if (t.uiInterval) clearInterval(t.uiInterval);
+      t.uiInterval = null; t.endsAt = 0;
     }
-
-    // 通常特質：READY前なら弾く（視覚的には変化しない）
-    const st = state.traits[key] || {};
-    if (st.cooldownEndsAt && Date.now() < st.cooldownEndsAt) {
-      await updatePanel(client, state);
-      return;
-    }
-
-    // 使用アナウンス
-    enqueueTokens(state.guildId, ['hunter_ga', trait.token, 'wo_shiyou']);
-
-    // 次回以降CTで開始（常に next）
-    const ct = trait.flags?.listen ? Math.min(trait.next, 80) : trait.next;
-    scheduleTraitCooldown(client, state, key, ct);
-    await updatePanel(client, state);
-    return;
+    return updatePanel(client, state, interaction);
   }
 
-  // ===== 裏向きカード（セレクト） =====
+  // 特質：使用（判明後に押される想定。ここでは current を使用したとみなし nextCT でスタート）
+  if (interaction.isButton() && id === 'trait:used') {
+    const key = state.revealedKey;
+    if (!key) return; // 未判明
+    const ct = NEXT_CT[key] ?? 100;
+    startTraitCooldown(client, state, key, ct, { isInitial: false });
+    enqueueTokens(state.guildId, [state.traits[key].token, 'tsukatta']); // 「特質を使用した」等、必要に応じ差し替え
+    return updatePanel(client, state, interaction);
+  }
+
+  // 裏向きカード（常時表示：120秒まで disabled。120秒以降 & 未使用なら可）
   if (interaction.isStringSelectMenu() && id === 'uramuki:select') {
-    await interaction.deferUpdate();
+    if (!state.matchActive || state.usedUramuki) return updatePanel(client, state, interaction);
+    if (!state.matchStartAt || Date.now() < state.matchStartAt + 120000) return updatePanel(client, state, interaction);
 
-    if (!state.matchActive) { await updatePanel(client, state); return; }
-    if (state.usedUramuki)  { await updatePanel(client, state); return; }
-    if (!state.revealedKey) { await updatePanel(client, state); return; }
-
-    const oldKey = state.revealedKey;
     const newKey = interaction.values?.[0];
-    if (!newKey || !TRAITS[newKey] || newKey === oldKey) {
-      await updatePanel(client, state);
-      return;
-    }
+    if (!newKey || !state.traits[newKey]) return updatePanel(client, state, interaction);
 
-    const oldTrait = TRAITS[oldKey];
-    const newTrait = TRAITS[newKey];
-
-    // --- 旧特質の“残り”と“基準CT” ---
-    let oldRemain = 0;
-    let oldBase = 0;
-
-    if (oldTrait.flags?.stacking) {
-      // 監視者 → 標準スケール90として扱う
-      oldRemain = kanshishaToOldRemainOn90(state); // 0..90
-      oldBase = 90;
-    } else {
-      // 標準特質
-      oldRemain = getStandardRemainSec(state, oldKey); // 0..N
-      const tOld = state.traits[oldKey];
-      oldBase = tOld?.baseCtSec ?? (oldTrait.flags?.listen ? Math.min(oldTrait.next, 80) : oldTrait.next);
-    }
-
-    // --- 新特質の“基準CT” ---
-    let newBase;
-    if (newTrait.flags?.stacking) {
-      newBase = 90; // 監視者は90sスケールで扱う（仕様）
-    } else {
-      newBase = newTrait.flags?.listen ? Math.min(newTrait.next, 80) : newTrait.next;
-    }
-
-    // --- 比率変換 & 適用 ---
-    if (newTrait.flags?.stacking) {
-      // → 監視者へ：90秒スケールに投影して seed 化
-      const f = (oldBase > 0) ? (oldRemain / oldBase) : 0;   // 0..1
-      const remainOn90 = Math.round(f * 90);                // 0..90
-      const seed = seedFromRemainOn90(remainOn90);
-
-      // 旧特質のタイマー類を停止
-      const tOld = state.traits[oldKey];
-      if (tOld?.cooldownTimeouts) for (const h of tOld.cooldownTimeouts) clearTimeout(h);
-      if (tOld?.uiInterval) clearInterval(tOld.uiInterval);
-      if (oldTrait.flags?.stacking) {
-        const ks = state.traits[oldKey]?.stacking;
-        if (ks?.interval) clearInterval(ks.interval);
-      }
-
-      // 新特質＝監視者として開始
+    // 未判明 → 変換して即「あり」
+    if (!state.revealedKey) {
       state.revealedKey = newKey;
+      state.revealedLabel = URAMUKI_OPTIONS.find(o => o.key === newKey)?.label || newKey;
       state.usedUramuki = true;
-      startKanshishaCharging(client, state, seed);
-      await updatePanel(client, state);
-      return;
-    } else {
-      // → 標準特質へ
-      let newRemain = 0;
-      if (oldBase > 0) newRemain = Math.round((oldRemain * newBase) / oldBase);
-      if (newTrait.flags?.listen) newRemain = Math.min(newRemain, 80);
-
-      // 旧特質のタイマー類を停止
-      const tOld = state.traits[oldKey];
-      if (tOld?.cooldownTimeouts) for (const h of tOld.cooldownTimeouts) clearTimeout(h);
-      if (tOld?.uiInterval) clearInterval(tOld.uiInterval);
-      if (oldTrait.flags?.stacking) {
-        const ks = state.traits[oldKey]?.stacking;
-        if (ks?.interval) clearInterval(ks.interval);
-      }
-
-      // 新特質の“残りnewRemain秒”から開始（このサイクルの基準は newBase）
-      state.revealedKey = newKey;
-      state.usedUramuki = true;
-      scheduleTraitCooldownWithRemaining(client, state, newKey, newRemain, newBase);
-      await updatePanel(client, state);
-      return;
+      enqueueTokens(state.guildId, [state.traits[newKey].token, 'ari']);
+      return updatePanel(client, state, interaction);
     }
+
+    // 判明済み → 残りから比率変換
+    const oldKey = state.revealedKey;
+    const remainSec = Math.max(0, Math.ceil((state.traits[oldKey].endsAt - Date.now()) / 1000));
+    const newRemain = convertRemaining(oldKey, newKey, remainSec);
+
+    state.revealedKey = newKey;
+    state.revealedLabel = URAMUKI_OPTIONS.find(o => o.key === newKey)?.label || newKey;
+    state.usedUramuki = true;
+
+    if (newRemain <= 0) {
+      enqueueTokens(state.guildId, [state.traits[newKey].token, 'ari']);
+      return updatePanel(client, state, interaction);
+    }
+    startTraitCooldown(client, state, newKey, newRemain, { isInitial: false });
+    return updatePanel(client, state, interaction);
   }
 
-  // 未対応は無視
-  return;
+  // ここに到達したら UI だけ更新
+  return updatePanel(client, state, interaction);
 }
 
 module.exports = { handle };
