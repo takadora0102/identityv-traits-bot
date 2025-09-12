@@ -2,7 +2,7 @@
 // ランクの段階入力（MAP -> BAN -> PICK -> 試合開始）
 // - 検索 → 候補セレクト（最大25件）→ 現在値更新
 // - 取り消しは「最後のみ」
-// - DB保存は /game:start 時点や /game:end 時点で buttons.js 側から呼ぶ設計にできます
+// - DB保存は /game:start や /game:end 時点で buttons.js 側から呼ぶ設計にできます
 
 const {
   ModalBuilder,
@@ -29,11 +29,10 @@ async function route(interaction, client, state) {
     state.rank.mapName = v || null;
     await updatePanel(client, state, interaction);
     return true;
-  }
+    }
 
   // 次へ（PICKへ）
   if (interaction.isButton() && interaction.customId === 'rank:next:picks') {
-    // 何もしない（パネルは render 側が段階を見て更新）
     await updatePanel(client, state, interaction);
     return true;
   }
