@@ -48,12 +48,12 @@ async function route(interaction, client, state) {
   // BAN 取り消し
   if (interaction.isButton() && interaction.customId === 'rank:ban:undo:surv') {
     state.rank.bansSurv.pop();
-    await updatePanel(client, state, interaction);
+    await updatePanel(client, state, interaction); // 変更を反映
     return true;
   }
   if (interaction.isButton() && interaction.customId === 'rank:ban:undo:hunter') {
     state.rank.bansHun.pop();
-    await updatePanel(client, state, interaction);
+    await updatePanel(client, state, interaction); // 変更を反映
     return true;
   }
 
@@ -92,14 +92,14 @@ async function route(interaction, client, state) {
       const ids = interaction.values || [];
       for (const v of ids) if (!state.rank.bansSurv.includes(v)) state.rank.bansSurv.push(v);
       await interaction.editReply({ content: 'サバBANを反映しました。', components: [] });
-      await updatePanel(client, state);
+      await updatePanel(client, state); // BAN状況を更新
       return true;
     }
     if (id === 'select:rank:ban:hunter') {
       const ids = interaction.values || [];
       for (const v of ids) if (!state.rank.bansHun.includes(v)) state.rank.bansHun.push(v);
       await interaction.editReply({ content: 'ハンBANを反映しました。', components: [] });
-      await updatePanel(client, state);
+      await updatePanel(client, state); // BAN状況を更新
       return true;
     }
     if (id === 'select:rank:pick:surv') {
