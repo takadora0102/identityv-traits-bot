@@ -144,7 +144,7 @@ function buildRankRows(state) {
           .setCustomId('rank:next:picks')
           .setLabel('次へ（PICK）')
           .setStyle(ButtonStyle.Success)
-          .setDisabled(!(bansSurvLen === 3 && bansHunLen === 3)),
+          .setDisabled(bansSurvLen < 3 || bansHunLen < 3),
       ),
     );
   } else if ((r.picksSurv?.length ?? 0) < 4) {
