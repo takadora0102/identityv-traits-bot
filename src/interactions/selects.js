@@ -1,7 +1,7 @@
 const { getGuildState, cancelAllAnnouncements } = require('../core/state');
 const { TRAITS } = require('../core/constants');
 const { convertRemainSec, watcherFromRemain } = require('../core/convert');
-const { buildEmbed, buildComponentsAfterTrait } = require('../core/render');
+const { composePayload } = require('../core/render');
 const { sayRemain, sayReady } = require('../voice/player');
 
 module.exports = {
@@ -79,9 +79,8 @@ module.exports = {
     try {
       const ch = await interaction.client.channels.fetch(state.panelChannelId);
       const msg = await ch.messages.fetch(state.panelMessageId);
-      const embed = buildEmbed(state);
-      const comps = buildComponentsAfterTrait(state);
-      await msg.edit({ embeds: [embed], components: comps });
+      const payload = composePayload(state.guildId, state);
+      await msg.edit(payload);
     } catch (e) {
       console.warn('panel edit (backcard) failed:', e.message);
     }
