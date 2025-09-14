@@ -73,15 +73,36 @@ async function route(interaction, client, state) {
 
     if (id === 'modal:rank:ban:surv:query') {
       const q = interaction.fields.getTextInputValue('rank:query');
-      return respondCandidates(interaction, state, 'survivor', q, 3 - state.rank.bansSurv.length, 'select:rank:ban:surv');
+      return respondCandidates(
+        interaction,
+        state,
+        'survivor',
+        q,
+        3 - state.rank.bansSurv.length,
+        'select:rank:ban:surv',
+      );
     }
     if (id === 'modal:rank:ban:hunter:query') {
       const q = interaction.fields.getTextInputValue('rank:query');
-      return respondCandidates(interaction, state, 'hunter', q, 3 - state.rank.bansHun.length, 'select:rank:ban:hunter');
+      return respondCandidates(
+        interaction,
+        state,
+        'hunter',
+        q,
+        3 - state.rank.bansHun.length,
+        'select:rank:ban:hunter',
+      );
     }
     if (id === 'modal:rank:pick:surv:query') {
       const q = interaction.fields.getTextInputValue('rank:query');
-      return respondCandidates(interaction, state, 'survivor', q, 4 - state.rank.picksSurv.length, 'select:rank:pick:surv');
+      return respondCandidates(
+        interaction,
+        state,
+        'survivor',
+        q,
+        4 - state.rank.picksSurv.length,
+        'select:rank:pick:surv',
+      );
     }
   }
 
@@ -91,21 +112,21 @@ async function route(interaction, client, state) {
     if (id === 'select:rank:ban:surv') {
       const ids = interaction.values || [];
       for (const v of ids) if (!state.rank.bansSurv.includes(v)) state.rank.bansSurv.push(v);
-      await interaction.editReply({ content: 'サバBANを反映しました。', components: [] });
+      await interaction.update({ content: 'サバBANを反映しました。', components: [] });
       await updatePanel(client, state);
       return true;
     }
     if (id === 'select:rank:ban:hunter') {
       const ids = interaction.values || [];
       for (const v of ids) if (!state.rank.bansHun.includes(v)) state.rank.bansHun.push(v);
-      await interaction.editReply({ content: 'ハンBANを反映しました。', components: [] });
+      await interaction.update({ content: 'ハンBANを反映しました。', components: [] });
       await updatePanel(client, state);
       return true;
     }
     if (id === 'select:rank:pick:surv') {
       const ids = interaction.values || [];
       for (const v of ids) if (!state.rank.picksSurv.includes(v)) state.rank.picksSurv.push(v);
-      await interaction.editReply({ content: 'サバPICKを反映しました。', components: [] });
+      await interaction.update({ content: 'サバPICKを反映しました。', components: [] });
       await updatePanel(client, state);
       return true;
     }
@@ -134,7 +155,7 @@ async function openSearchModal(interaction, customId, title) {
 // ---- 候補をエフェメラルのセレクトで提示（最大25件 / 残り枠 = maxValues）
 async function respondCandidates(interaction, state, role, query, maxValues, selectId) {
   if (maxValues <= 0) {
-    await interaction.editReply({ content: '枠は埋まっています。', components: [] });
+    await interaction.reply({ content: '枠は埋まっています。', components: [], ephemeral: true });
     return true;
   }
 
@@ -148,7 +169,11 @@ async function respondCandidates(interaction, state, role, query, maxValues, sel
 
   const list = search(role, query, 25, exclude);
   if (!list.length) {
-    await interaction.editReply({ content: '候補が見つかりませんでした。検索語を変えて再試行してください。', components: [] });
+    await interaction.reply({
+      content: '候補が見つかりませんでした。検索語を変えて再試行してください。',
+      components: [],
+      ephemeral: true,
+    });
     return true;
   }
 
@@ -160,7 +185,11 @@ async function respondCandidates(interaction, state, role, query, maxValues, sel
     .addOptions(list.map(x => ({ label: x.ja, value: x.id, description: x.kana ?? undefined })));
 
   const row = new ActionRowBuilder().addComponents(sel);
-  await interaction.editReply({ content: '候補から選択してください。', components: [row] });
+  await interaction.reply({
+    content: '候補から選択してください。',
+    components: [row],
+    ephemeral: true,
+  });
   return true;
 }
 
