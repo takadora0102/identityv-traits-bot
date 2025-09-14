@@ -37,6 +37,17 @@ const INITIAL_CT = { // 開始時CT（初回のみ）
   listen: 20,
 };
 
+const TRAIT_LABELS = {
+  kofun: '興奮',
+  shunkan: '瞬間移動',
+  ikei: '移形',
+  shinshutsu: '神出鬼没',
+  ijou: '異常',
+  junshi: '巡視者',
+  kanshi: '監視者',
+  listen: 'リッスン',
+};
+
 function getGuildState(client, interaction) {
   // 既存の state 管理に合わせて取得してください（例では client にぶら下げる）
   client.__guildStates ||= new Map();
@@ -201,13 +212,15 @@ async function handle(interaction, client) {
     return updatePanel(client, state, interaction);
   }
 
-  // 特質：使用（判明後に押される想定。ここでは current を使用したとみなし nextCT でスタート）
-  if (interaction.isButton() && id === 'trait:used') {
-    const key = state.revealedKey;
-    if (!key) return; // 未判明
+  // 特質：使用（各特質ボタンで判明 & 使用を記録）
+  if (interaction.isButton() && id.startsWith('trait:used:')) {
+    const key = id.split(':')[2];
+    if (!state.traits[key]) return updatePanel(client, state, interaction);
+    state.revealedKey = key;
+    state.revealedLabel = TRAIT_LABELS[key] || key;
     const ct = NEXT_CT[key] ?? 100;
     startTraitCooldown(client, state, key, ct, { isInitial: false });
-    enqueueTokens(state.guildId, [state.traits[key].token, 'tsukatta']); // 「特質を使用した」等、必要に応じ差し替え
+    enqueueTokens(state.guildId, [state.traits[key].token, 'tsukatta']);
     return updatePanel(client, state, interaction);
   }
 
@@ -222,7 +235,7 @@ async function handle(interaction, client) {
     // 未判明 → 変換して即「あり」
     if (!state.revealedKey) {
       state.revealedKey = newKey;
-      state.revealedLabel = URAMUKI_OPTIONS.find(o => o.key === newKey)?.label || newKey;
+      state.revealedLabel = TRAIT_LABELS[newKey] || newKey;
       state.usedUramuki = true;
       enqueueTokens(state.guildId, [state.traits[newKey].token, 'ari']);
       return updatePanel(client, state, interaction);
@@ -234,7 +247,7 @@ async function handle(interaction, client) {
     const newRemain = convertRemaining(oldKey, newKey, remainSec);
 
     state.revealedKey = newKey;
-    state.revealedLabel = URAMUKI_OPTIONS.find(o => o.key === newKey)?.label || newKey;
+    state.revealedLabel = TRAIT_LABELS[newKey] || newKey;
     state.usedUramuki = true;
 
     if (newRemain <= 0) {

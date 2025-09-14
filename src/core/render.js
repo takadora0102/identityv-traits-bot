@@ -197,11 +197,15 @@ function buildInGameRows(state) {
     new ButtonBuilder().setCustomId('game:next').setLabel('▶ 次の試合開始').setStyle(ButtonStyle.Secondary),
   ));
 
-  // 中段：特質操作ボタン（既存の構成に合わせて適宜追加してください）
-  // ここでは例として「判明済み特質を再使用」ボタンだけ置く（実装は buttons.js 側）
-  rows.push(new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('trait:used').setLabel('特質を使用').setStyle(ButtonStyle.Primary),
-  ));
+  // 中段：特質操作ボタン（2行に分けて配置）
+  const traitButtons = URAMUKI_OPTIONS.map(o =>
+    new ButtonBuilder()
+      .setCustomId(`trait:used:${o.key}`)
+      .setLabel(o.label)
+      .setStyle(ButtonStyle.Primary)
+  );
+  rows.push(new ActionRowBuilder().addComponents(...traitButtons.slice(0, 4)));
+  rows.push(new ActionRowBuilder().addComponents(...traitButtons.slice(4, 8)));
 
   // 下段：裏向きカード（常時表示、120sでenable）
   rows.push(buildUramukiRow(state));
