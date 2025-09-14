@@ -2,7 +2,7 @@
 const { SlashCommandBuilder, ChannelType, MessageFlags } = require('discord.js');
 const { connectVoice, enqueueTokens } = require('../voice/player');
 const { getGuildState } = require('../core/state');
-const { buildEmbed, buildInitialComponents } = require('../core/render');
+const { composePayload } = require('../core/render');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -46,9 +46,8 @@ module.exports = {
     enqueueTokens(guild.id, ['vc_setsuzoku']);
 
     // コントロールパネルを送信（初期は「▶ 試合開始」＋ マッチコントロール）
-    const embed = buildEmbed({ ...state, matchActive: false });
-    const components = buildInitialComponents();
-    const sent = await interaction.channel.send({ embeds: [embed], components });
+    const payload = composePayload(state.guildId, { ...state, matchActive: false });
+    const sent = await interaction.channel.send(payload);
 
     state.panelMessageId = sent.id;
 
