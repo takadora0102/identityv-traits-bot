@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 const dict = JSON.parse(
-  fs.readFileSync(path.join(__dirname, '../../data/characters.json'), 'utf8')
+  fs.readFileSync(path.join(__dirname, '../data/characters.json'), 'utf8')
 );
 
 function normalize(s) {
