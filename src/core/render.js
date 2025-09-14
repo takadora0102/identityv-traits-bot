@@ -112,21 +112,39 @@ function buildRankRows(state) {
     rows.push(new ActionRowBuilder().addComponents(sel));
   } else if ((r.bansSurv?.length ?? 0) < 3 || (r.bansHun?.length ?? 0) < 3) {
     // BAN 追加/取り消し/次へ
+    const bansSurvLen = r.bansSurv?.length ?? 0;
+    const bansHunLen = r.bansHun?.length ?? 0;
     rows.push(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('rank:ban:add:surv').setLabel('サバBANを追加').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('rank:ban:add:hunter').setLabel('ハンBANを追加').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('rank:ban:add:surv')
+          .setLabel('サバBANを追加')
+          .setStyle(ButtonStyle.Primary)
+          .setDisabled(bansSurvLen >= 3),
+        new ButtonBuilder()
+          .setCustomId('rank:ban:add:hunter')
+          .setLabel('ハンBANを追加')
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(bansHunLen >= 3),
       ),
     );
     rows.push(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('rank:ban:undo:surv').setLabel('サバBAN 最後を取り消し').setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId('rank:ban:undo:hunter').setLabel('ハンBAN 最後を取り消し').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder()
+          .setCustomId('rank:ban:undo:surv')
+          .setLabel('サバBAN 最後を取り消し')
+          .setStyle(ButtonStyle.Danger)
+          .setDisabled(bansSurvLen === 0),
+        new ButtonBuilder()
+          .setCustomId('rank:ban:undo:hunter')
+          .setLabel('ハンBAN 最後を取り消し')
+          .setStyle(ButtonStyle.Danger)
+          .setDisabled(bansHunLen === 0),
         new ButtonBuilder()
           .setCustomId('rank:next:picks')
           .setLabel('次へ（PICK）')
           .setStyle(ButtonStyle.Success)
-          .setDisabled(!((r.bansSurv?.length ?? 0) === 3 && (r.bansHun?.length ?? 0) === 3)),
+          .setDisabled(bansSurvLen < 3 || bansHunLen < 3),
       ),
     );
   } else if ((r.picksSurv?.length ?? 0) < 4) {
