@@ -294,8 +294,16 @@ async function updatePanel(client, state, interaction) {
   // 既存メッセージの編集
   if (client && state.panelChannelId && state.panelMessageId) {
     try {
-      const ch = client.channels.cache.get(state.panelChannelId);
-      if (!ch) return;
+      let ch = client.channels.cache.get(state.panelChannelId);
+      if (!ch) {
+        try {
+          ch = await client.channels.fetch(state.panelChannelId);
+        } catch (fetchErr) {
+          console.error('[render] updatePanel channel fetch error', fetchErr);
+          return;
+        }
+      }
+      if (!ch || typeof ch.isTextBased === 'function' && !ch.isTextBased()) return;
       const msg = await ch.messages.fetch(state.panelMessageId);
       await msg.edit(payload);
     } catch (e) {
