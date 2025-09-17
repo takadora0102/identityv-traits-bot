@@ -6,6 +6,7 @@
 // - 特質使用（再使用トリガ）
 // - ランクの段階UIは rank.js に委譲
 
+const { MessageFlags } = require('discord.js');
 const { updatePanel } = require('../core/render');
 const { getGuildState: getCoreGuildState } = require('../core/state');
 const rank = require('./rank');
@@ -93,8 +94,19 @@ function getGuildState(client, interaction) {
     st.voiceChannelId = sharedState.voiceChannelId;
   }
   // 最新のメッセージIDを覚えておく（update用）
-  if (interaction.message?.id) st.panelMessageId = interaction.message.id;
-  if (interaction.channelId) st.panelChannelId = interaction.channelId;
+  const msgFlags = interaction.message?.flags;
+  const isEphemeralMessage = Boolean(
+    msgFlags?.has?.(MessageFlags.Ephemeral) ??
+      (typeof msgFlags?.bitfield === 'number'
+        ? msgFlags.bitfield & MessageFlags.Ephemeral
+        : typeof msgFlags === 'number' && msgFlags & MessageFlags.Ephemeral)
+  );
+  if (!isEphemeralMessage) {
+    if (interaction.message?.id) st.panelMessageId = interaction.message.id;
+    if (interaction.channelId) st.panelChannelId = interaction.channelId;
+  } else if (!st.panelChannelId && interaction.channelId) {
+    st.panelChannelId = interaction.channelId;
+  }
   return st;
 }
 
