@@ -49,11 +49,23 @@ const TRAIT_LABELS = {
   listen: 'リッスン',
 };
 
+function createInitialRankState() {
+  return {
+    mapName: null,
+    bansSurv: [],
+    bansHun: [],
+    picksSurv: [],
+    pickHunter: null,
+    matchId: null,
+  };
+}
+
 function getGuildState(client, interaction) {
   // 既存の state 管理に合わせて取得してください（例では client にぶら下げる）
   client.__guildStates ||= new Map();
   const gid = interaction.guildId;
   const sharedState = getCoreGuildState(gid);
+  if (sharedState && !sharedState.rank) sharedState.rank = createInitialRankState();
   if (!client.__guildStates.has(gid)) {
     client.__guildStates.set(gid, {
       guildId: gid,
@@ -67,14 +79,7 @@ function getGuildState(client, interaction) {
       revealedKey: null,
       revealedLabel: null,
       // ランク用ステート
-      rank: {
-        mapName: null,
-        bansSurv: [],
-        bansHun: [],
-        picksSurv: [],
-        pickHunter: null,
-        matchId: null, // DBの行ID
-      },
+      rank: createInitialRankState(),
       // 特質構造（音声トークン名と endsAt 管理）
       traits: {
         kofun:      { token: 'kofun',      endsAt: 0, uiInterval: null },
@@ -169,7 +174,7 @@ async function handle(interaction, client) {
   if (interaction.isButton() && id === 'mode:rank') {
     state.mode = 'rank';
     state.matchActive = false;
-    state.rank = state.rank || { mapName: null, bansSurv: [], bansHun: [], picksSurv: [], pickHunter: null, matchId: null };
+    state.rank = state.rank || createInitialRankState();
     return updatePanel(client, state, interaction);
   }
   if (interaction.isButton() && id === 'mode:multi') {
@@ -205,7 +210,7 @@ async function handle(interaction, client) {
   if (interaction.isButton() && id === 'game:next') {
     // 待機へ戻す（入口へ）
     state.mode = null;
-    state.rank = { mapName: null, bansSurv: [], bansHun: [], picksSurv: [], pickHunter: null, matchId: null };
+    state.rank = createInitialRankState();
     state.matchActive = false;
     state.matchStartAt = null;
     state.usedUramuki = false;
@@ -221,10 +226,14 @@ async function handle(interaction, client) {
   if (interaction.isButton() && id === 'voice:disconnect') {
     stopAll(state.guildId);
     disconnect(state.guildId);
+    state.rank = createInitialRankState();
     state.voiceChannelId = null;
     try {
       const shared = getCoreGuildState(state.guildId);
-      if (shared) shared.voiceChannelId = null;
+      if (shared) {
+        shared.voiceChannelId = null;
+        shared.rank = createInitialRankState();
+      }
     } catch {}
     try {
       await interaction.followUp({ content: 'VCから切断しました', ephemeral: true });
