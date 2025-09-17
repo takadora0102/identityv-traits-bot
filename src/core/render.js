@@ -1,6 +1,9 @@
 // src/core/render.js
 // UI組み立て・パネル更新（ランク/マルチ分岐、裏向きカード常時表示（120秒でenable））
 
+const fs = require('fs');
+const path = require('path');
+
 const {
   ActionRowBuilder,
   ButtonBuilder,
@@ -8,6 +11,31 @@ const {
   StringSelectMenuBuilder,
   EmbedBuilder,
 } = require('discord.js');
+
+// ---- キャラクター名解決
+const CHARACTER_NAME_MAP = (() => {
+  try {
+    const file = path.join(__dirname, '../data/characters.json');
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const map = new Map();
+    for (const c of parsed.survivors || []) map.set(c.id, c.ja);
+    for (const c of parsed.hunters || []) map.set(c.id, c.ja);
+    return map;
+  } catch (err) {
+    console.error('Failed to load characters.json', err);
+    return new Map();
+  }
+})();
+
+function characterIdToJa(id) {
+  if (!id) return '';
+  return CHARACTER_NAME_MAP.get(id) || id;
+}
+
+function formatCharacterIds(ids) {
+  const names = (ids || []).map(characterIdToJa).filter(Boolean);
+  return names.length ? names.join(' / ') : '—';
+}
 
 // ---- ユーティリティ
 function fmtSec(n) {
@@ -92,11 +120,11 @@ function buildRankProgressEmbed(guildId, state) {
   const lines = [];
   lines.push(`**モード:** ランク`);
   lines.push(`**マップ:** ${state.rank?.mapName ?? '未選択'}`);
-  const bansSurv = (state.rank?.bansSurv ?? []).join(' / ') || '—';
-  const bansHun  = (state.rank?.bansHun  ?? []).join(' / ') || '—';
+  const bansSurv = formatCharacterIds(state.rank?.bansSurv);
+  const bansHun  = formatCharacterIds(state.rank?.bansHun);
   lines.push(`**サバBAN (${(state.rank?.bansSurv ?? []).length}/3):** ${bansSurv}`);
   lines.push(`**ハンBAN (${(state.rank?.bansHun ?? []).length}/3):** ${bansHun}`);
-  const picksSurv = (state.rank?.picksSurv ?? []).join(' / ') || '—';
+  const picksSurv = formatCharacterIds(state.rank?.picksSurv);
   lines.push(`**サバPICK (${(state.rank?.picksSurv ?? []).length}/4):** ${picksSurv}`);
 
   return new EmbedBuilder()
