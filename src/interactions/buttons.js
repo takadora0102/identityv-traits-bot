@@ -7,13 +7,14 @@
 // - ランクの段階UIは rank.js に委譲
 
 const { updatePanel } = require('../core/render');
+const { getGuildState: getCoreGuildState } = require('../core/state');
 const rank = require('./rank');
 const {
   scheduleInitialReady,
   scheduleUramukiEnable,
   startTraitCooldown,
 } = require('../core/scheduler');
-const { enqueueTokens } = require('../voice/player');
+const { enqueueTokens, stopAll, disconnect } = require('../voice/player');
 
 // 特質テーブル（抜粋例：実プロジェクトの既存 state.traits を利用してください）
 const NEXT_CT = { // nextサイクル（通常CT）
@@ -52,11 +53,13 @@ function getGuildState(client, interaction) {
   // 既存の state 管理に合わせて取得してください（例では client にぶら下げる）
   client.__guildStates ||= new Map();
   const gid = interaction.guildId;
+  const sharedState = getCoreGuildState(gid);
   if (!client.__guildStates.has(gid)) {
     client.__guildStates.set(gid, {
       guildId: gid,
       panelChannelId: interaction.channelId,
       panelMessageId: interaction.message?.id,
+      voiceChannelId: sharedState?.voiceChannelId ?? null,
       mode: null,             // 'rank' | 'multi'
       matchActive: false,
       matchStartAt: null,
@@ -86,6 +89,9 @@ function getGuildState(client, interaction) {
     });
   }
   const st = client.__guildStates.get(gid);
+  if (sharedState) {
+    st.voiceChannelId = sharedState.voiceChannelId;
+  }
   // 最新のメッセージIDを覚えておく（update用）
   if (interaction.message?.id) st.panelMessageId = interaction.message.id;
   if (interaction.channelId) st.panelChannelId = interaction.channelId;
@@ -208,6 +214,22 @@ async function handle(interaction, client) {
     for (const t of Object.values(state.traits)) {
       if (t.uiInterval) clearInterval(t.uiInterval);
       t.uiInterval = null; t.endsAt = 0;
+    }
+    return updatePanel(client, state, interaction);
+  }
+
+  if (interaction.isButton() && id === 'voice:disconnect') {
+    stopAll(state.guildId);
+    disconnect(state.guildId);
+    state.voiceChannelId = null;
+    try {
+      const shared = getCoreGuildState(state.guildId);
+      if (shared) shared.voiceChannelId = null;
+    } catch {}
+    try {
+      await interaction.followUp({ content: 'VCから切断しました', ephemeral: true });
+    } catch (e) {
+      console.error('[buttons] failed to send voice disconnect notice', e);
     }
     return updatePanel(client, state, interaction);
   }

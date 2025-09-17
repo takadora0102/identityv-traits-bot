@@ -48,9 +48,20 @@ function buildUramukiRow(state) {
   return new ActionRowBuilder().addComponents(select);
 }
 
+function buildVoiceControlRow(state) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('voice:disconnect')
+      .setLabel('🔌 VC切断')
+      .setStyle(ButtonStyle.Danger)
+      .setDisabled(!state.voiceChannelId)
+  );
+}
+
 // ---- ランク/マルチ 入口（/setup直後）
-function buildEntryRows() {
-  const row = new ActionRowBuilder().addComponents(
+function buildEntryRows(state) {
+  const rows = [];
+  rows.push(new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('mode:rank')
       .setLabel('ランク（集計あり）')
@@ -59,8 +70,9 @@ function buildEntryRows() {
       .setCustomId('mode:multi')
       .setLabel('マルチ（集計なし）')
       .setStyle(ButtonStyle.Secondary),
-  );
-  return [row];
+  ));
+  rows.push(buildVoiceControlRow(state));
+  return rows.slice(0, 5);
 }
 
 function buildEntryEmbed(guildId, state) {
@@ -174,12 +186,13 @@ function buildRankRows(state) {
       ),
     );
   }
+  rows.push(buildVoiceControlRow(state));
   return rows.slice(0, 5);
 }
 
 // ---- マルチ（従来どおり開始ボタン）
-function buildMultiRows() {
-  return [
+function buildMultiRows(state) {
+  const rows = [
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('game:start')
@@ -187,6 +200,8 @@ function buildMultiRows() {
         .setStyle(ButtonStyle.Success),
     ),
   ];
+  rows.push(buildVoiceControlRow(state));
+  return rows.slice(0, 5);
 }
 
 // ---- 試合中UI（制御 + 裏向き + 特質操作は既存ボタン群を統合している想定）
@@ -228,6 +243,8 @@ function buildInGameRows(state) {
   // 下段：裏向きカード（常時表示、120sでenable）
   rows.push(buildUramukiRow(state));
 
+  rows.push(buildVoiceControlRow(state));
+
   return rows.slice(0, 5);
 }
 
@@ -243,13 +260,13 @@ function composePayload(guildId, state) {
     if (state.mode === 'multi') {
       return {
         embeds: [buildEntryEmbed(guildId, state)],
-        components: buildMultiRows(),
+        components: buildMultiRows(state),
       };
     }
     // モード未選択
     return {
       embeds: [buildEntryEmbed(guildId, state)],
-      components: buildEntryRows(),
+      components: buildEntryRows(state),
     };
   }
 
@@ -290,5 +307,6 @@ async function updatePanel(client, state, interaction) {
 module.exports = {
   updatePanel,
   buildUramukiRow,
+  buildVoiceControlRow,
   composePayload, // デバッグ用途
 };
