@@ -141,6 +141,12 @@ function scheduleMatchStart(client, state) {
 async function handle(interaction, client) {
   const state = getGuildState(client, interaction);
 
+  // ランク専用の分岐（map / ban / pick / result など）
+  if (await rank.route(interaction, client, state)) {
+    // rank.js が処理した
+    return;
+  }
+
   // どのタイプでもまずは defer（セレクト/ボタン/モーダル問わずOK）
   try {
     if (interaction.isButton() || interaction.isStringSelectMenu()) {
@@ -149,12 +155,6 @@ async function handle(interaction, client) {
       await interaction.deferReply({ ephemeral: true });
     }
   } catch {}
-
-  // ランク専用の分岐（map / ban / pick / result など）
-  if (await rank.route(interaction, client, state)) {
-    // rank.js が処理した
-    return;
-  }
 
   // 共通ボタン・セレクト
   const id = interaction.customId;
