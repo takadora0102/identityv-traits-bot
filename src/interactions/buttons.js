@@ -7,6 +7,7 @@
 // - ランクの段階UIは rank.js に委譲
 
 const { MessageFlags } = require('discord.js');
+const { createMatch, updateMatch } = require('../db');
 const { updatePanel } = require('../core/render');
 const { getGuildState: getCoreGuildState } = require('../core/state');
 const rank = require('./rank');
@@ -197,7 +198,43 @@ async function handle(interaction, client) {
 
   // 試合制御
   if (interaction.isButton() && id === 'game:start') {
-    // ランク：DBへの createMatch は rank.js 側で行う（必要に応じて）
+    const matchMode = state.mode === 'rank' ? 'rank' : 'multi';
+    const panelChannelId = state.panelChannelId ?? interaction.channelId;
+    const panelMessageId = state.panelMessageId ?? interaction.message?.id ?? null;
+    try {
+      const matchId = await createMatch({
+        guildId: state.guildId,
+        channelId: panelChannelId,
+        mode: matchMode,
+        createdBy: interaction.user?.id,
+      });
+
+      state.rank ||= createInitialRankState();
+      state.rank.matchId = matchId;
+
+      const shared = getCoreGuildState(state.guildId);
+      if (shared) {
+        if (!shared.rank) shared.rank = {};
+        shared.rank.matchId = matchId;
+      }
+
+      const rankSnapshot = matchMode === 'rank' ? state.rank : createInitialRankState();
+      await updateMatch(matchId, {
+        map: rankSnapshot.mapName ?? null,
+        bans_surv: rankSnapshot.bansSurv ?? [],
+        bans_hunter: rankSnapshot.bansHun ?? [],
+        picks_surv: rankSnapshot.picksSurv ?? [],
+        pick_hunter: rankSnapshot.pickHunter ?? null,
+        meta: {
+          voice_channel_id: state.voiceChannelId ?? null,
+          panel_channel_id: panelChannelId,
+          panel_message_id: panelMessageId,
+        },
+      });
+    } catch (err) {
+      console.error('[buttons] failed to create/update match record', err);
+    }
+
     enqueueTokens(state.guildId, ['shiai_kaishi']); // 「試合開始」
     scheduleMatchStart(client, state);
     return updatePanel(client, state, interaction);
