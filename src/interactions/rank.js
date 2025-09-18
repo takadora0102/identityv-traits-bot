@@ -112,21 +112,21 @@ async function route(interaction, client, state) {
     if (id === 'select:rank:ban:surv') {
       const ids = interaction.values || [];
       for (const v of ids) if (!state.rank.bansSurv.includes(v)) state.rank.bansSurv.push(v);
-      await interaction.update({ content: 'サバBANを反映しました。', components: [] });
+      await interaction.update({ components: [] });
       await updatePanel(client, state);
       return true;
     }
     if (id === 'select:rank:ban:hunter') {
       const ids = interaction.values || [];
       for (const v of ids) if (!state.rank.bansHun.includes(v)) state.rank.bansHun.push(v);
-      await interaction.update({ content: 'ハンBANを反映しました。', components: [] });
+      await interaction.update({ components: [] });
       await updatePanel(client, state);
       return true;
     }
     if (id === 'select:rank:pick:surv') {
       const ids = interaction.values || [];
       for (const v of ids) if (!state.rank.picksSurv.includes(v)) state.rank.picksSurv.push(v);
-      await interaction.update({ content: 'サバPICKを反映しました。', components: [] });
+      await interaction.update({ components: [] });
       await updatePanel(client, state);
       return true;
     }
