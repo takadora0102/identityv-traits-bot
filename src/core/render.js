@@ -29,6 +29,7 @@ const CHARACTER_NAME_MAP = (() => {
 
 function characterIdToJa(id) {
   if (!id) return '';
+  if (typeof id === 'string' && id.startsWith('ban:none:')) return 'none';
   return CHARACTER_NAME_MAP.get(id) || id;
 }
 

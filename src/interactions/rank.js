@@ -145,7 +145,7 @@ async function openSearchModal(interaction, customId, title) {
     .setCustomId('rank:query')
     .setLabel('キャラ名の一部（かな/漢字/ローマ字）')
     .setStyle(TextInputStyle.Short)
-    .setRequired(true);
+    .setRequired(false);
 
   modal.addComponents(new ActionRowBuilder().addComponents(input));
   await interaction.showModal(modal);
@@ -159,6 +159,10 @@ async function respondCandidates(interaction, state, role, query, maxValues, sel
     return true;
   }
 
+  const trimmedQuery = (query ?? '').trim();
+  const isBanSelect = selectId.startsWith('select:rank:ban:');
+  const shouldOfferNone = isBanSelect && trimmedQuery === '';
+
   // 既存選択を除外
   const exclude = new Set([
     ...(state.rank.bansSurv || []),
@@ -167,8 +171,22 @@ async function respondCandidates(interaction, state, role, query, maxValues, sel
     state.rank.pickHunter || undefined,
   ].filter(Boolean));
 
-  const list = search(role, query, 25, exclude);
-  if (!list.length) {
+  const list = search(role, trimmedQuery, shouldOfferNone ? 24 : 25, exclude);
+  const options = list.map(x => ({ label: x.ja, value: x.id, description: x.kana ?? undefined }));
+
+  if (shouldOfferNone) {
+    const isSurvivorBan = selectId === 'select:rank:ban:surv';
+    const noneValue = isSurvivorBan ? 'ban:none:survivor' : 'ban:none:hunter';
+    if (!exclude.has(noneValue)) {
+      options.unshift({
+        label: 'none',
+        value: noneValue,
+        description: isSurvivorBan ? 'BAN指示なし（サバイバー）' : 'BAN指示なし（ハンター）',
+      });
+    }
+  }
+
+  if (!options.length) {
     await interaction.reply({
       content: '候補が見つかりませんでした。検索語を変えて再試行してください。',
       components: [],
@@ -181,8 +199,8 @@ async function respondCandidates(interaction, state, role, query, maxValues, sel
     .setCustomId(selectId)
     .setPlaceholder('候補から選択（複数可）')
     .setMinValues(1)
-    .setMaxValues(Math.min(maxValues, list.length))
-    .addOptions(list.map(x => ({ label: x.ja, value: x.id, description: x.kana ?? undefined })));
+    .setMaxValues(Math.min(maxValues, options.length))
+    .addOptions(options);
 
   const row = new ActionRowBuilder().addComponents(sel);
   await interaction.reply({
