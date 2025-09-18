@@ -13,11 +13,30 @@ const {
 } = require('discord.js');
 
 const { updatePanel } = require('../core/render');
+const { updateMatch } = require('../db');
 const { search } = require('../utils/search');
 
 function ensureRank(state) {
   state.rank ||= { mapName: null, bansSurv: [], bansHun: [], picksSurv: [], pickHunter: null, matchId: null };
   return state.rank;
+}
+
+async function persistRankPatch(state, patch, context = 'rank') {
+  const matchId = state?.rank?.matchId;
+  if (!matchId) return;
+
+  const sanitized = {};
+  for (const [key, value] of Object.entries(patch || {})) {
+    sanitized[key] = Array.isArray(value) ? [...value] : value;
+  }
+
+  if (!Object.keys(sanitized).length) return;
+
+  try {
+    await updateMatch(matchId, sanitized);
+  } catch (err) {
+    console.error(`[rank] failed to persist match update (${context})`, err);
+  }
 }
 
 async function route(interaction, client, state) {
@@ -27,9 +46,11 @@ async function route(interaction, client, state) {
   if (interaction.isStringSelectMenu() && interaction.customId === 'rank:map:select') {
     const v = interaction.values?.[0];
     state.rank.mapName = v || null;
+    const persistPromise = persistRankPatch(state, { map: state.rank.mapName }, 'map');
     await updatePanel(client, state, interaction);
+    await persistPromise;
     return true;
-    }
+  }
 
   // 次へ（PICKへ）
   if (interaction.isButton() && interaction.customId === 'rank:next:picks') {
@@ -48,12 +69,16 @@ async function route(interaction, client, state) {
   // BAN 取り消し
   if (interaction.isButton() && interaction.customId === 'rank:ban:undo:surv') {
     state.rank.bansSurv.pop();
+    const persistPromise = persistRankPatch(state, { bans_surv: state.rank.bansSurv }, 'ban:undo:surv');
     await updatePanel(client, state, interaction);
+    await persistPromise;
     return true;
   }
   if (interaction.isButton() && interaction.customId === 'rank:ban:undo:hunter') {
     state.rank.bansHun.pop();
+    const persistPromise = persistRankPatch(state, { bans_hunter: state.rank.bansHun }, 'ban:undo:hunter');
     await updatePanel(client, state, interaction);
+    await persistPromise;
     return true;
   }
 
@@ -63,7 +88,9 @@ async function route(interaction, client, state) {
   }
   if (interaction.isButton() && interaction.customId === 'rank:pick:undo:surv') {
     state.rank.picksSurv.pop();
+    const persistPromise = persistRankPatch(state, { picks_surv: state.rank.picksSurv }, 'pick:undo:surv');
     await updatePanel(client, state, interaction);
+    await persistPromise;
     return true;
   }
 
@@ -111,23 +138,71 @@ async function route(interaction, client, state) {
     const id = interaction.customId;
     if (id === 'select:rank:ban:surv') {
       const ids = interaction.values || [];
-      for (const v of ids) if (!state.rank.bansSurv.includes(v)) state.rank.bansSurv.push(v);
-      await interaction.update({ components: [] });
-      await updatePanel(client, state);
+      let updated = false;
+      for (const v of ids) {
+        if (!state.rank.bansSurv.includes(v)) {
+          state.rank.bansSurv.push(v);
+          updated = true;
+        }
+      }
+      try {
+        await interaction.update({ components: [] });
+      } catch (err) {
+        console.error('[rank] failed to update interaction (ban:surv)', err);
+      }
+      const persistPromise = updated
+        ? persistRankPatch(state, { bans_surv: state.rank.bansSurv }, 'ban:add:surv')
+        : Promise.resolve();
+      await Promise.all([
+        persistPromise,
+        updatePanel(client, state),
+      ]);
       return true;
     }
     if (id === 'select:rank:ban:hunter') {
       const ids = interaction.values || [];
-      for (const v of ids) if (!state.rank.bansHun.includes(v)) state.rank.bansHun.push(v);
-      await interaction.update({ components: [] });
-      await updatePanel(client, state);
+      let updated = false;
+      for (const v of ids) {
+        if (!state.rank.bansHun.includes(v)) {
+          state.rank.bansHun.push(v);
+          updated = true;
+        }
+      }
+      try {
+        await interaction.update({ components: [] });
+      } catch (err) {
+        console.error('[rank] failed to update interaction (ban:hunter)', err);
+      }
+      const persistPromise = updated
+        ? persistRankPatch(state, { bans_hunter: state.rank.bansHun }, 'ban:add:hunter')
+        : Promise.resolve();
+      await Promise.all([
+        persistPromise,
+        updatePanel(client, state),
+      ]);
       return true;
     }
     if (id === 'select:rank:pick:surv') {
       const ids = interaction.values || [];
-      for (const v of ids) if (!state.rank.picksSurv.includes(v)) state.rank.picksSurv.push(v);
-      await interaction.update({ components: [] });
-      await updatePanel(client, state);
+      let updated = false;
+      for (const v of ids) {
+        if (!state.rank.picksSurv.includes(v)) {
+          state.rank.picksSurv.push(v);
+          updated = true;
+        }
+      }
+      try {
+        await interaction.update({ components: [] });
+      } catch (err) {
+        console.error('[rank] failed to update interaction (pick:surv)', err);
+      }
+      const persistPromise = updated
+        ? persistRankPatch(state, { picks_surv: state.rank.picksSurv }, 'pick:add:surv')
+        : Promise.resolve();
+      await Promise.all([
+        persistPromise,
+        updatePanel(client, state),
+      ]);
       return true;
     }
   }
