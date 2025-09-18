@@ -1,49 +1,889 @@
 {
   "survivors": [
-    { "id": "lucky_guy",   "ja": "幸運児",   "kana": "こううんじ",     "aliases": ["lucky", "kouunji"] },
-    { "id": "doctor",      "ja": "医師",     "kana": "いし",           "aliases": ["doctor", "ishi", "医"] },
-    { "id": "lawyer",      "ja": "弁護士",   "kana": "べんごし",       "aliases": ["lawyer", "弁", "bengoshi"] },
-    { "id": "thief",       "ja": "泥棒",     "kana": "どろぼう",       "aliases": ["thief", "泥", "dorobou"] },
-    { "id": "gardener",    "ja": "庭師",     "kana": "にわし",         "aliases": ["gardener", "庭", "niwashi"] },
-    { "id": "forward",     "ja": "オフェンス","kana": "おふぇんす",    "aliases": ["offense", "オフェ", "ofensu"] },
-    { "id": "coordinator", "ja": "空軍",     "kana": "くうぐん",       "aliases": ["coordinator", "空", "kuugun"] },
-    { "id": "mechanic",    "ja": "機械技師", "kana": "きかいぎし",     "aliases": ["mechanic", "技師", "kikaigishi"] },
-    { "id": "priestess",   "ja": "祭司",     "kana": "さいし",         "aliases": ["priestess", "祭", "saishi"] },
-    { "id": "seer",        "ja": "占い師",   "kana": "うらないし",     "aliases": ["seer", "占", "uranaishi"] },
-    { "id": "mercenary",   "ja": "傭兵",     "kana": "ようへい",       "aliases": ["merc", "mercenary", "傭", "youhei"] },
-    { "id": "cowboy",      "ja": "カウボーイ","kana": "かうぼーい",    "aliases": ["cowboy", "kauboi"] },
-    { "id": "dancer",      "ja": "踊り子",   "kana": "おどりこ",       "aliases": ["dancer", "odoriko"] },
-    { "id": "acrobat",     "ja": "曲芸師",   "kana": "きょくげいし",   "aliases": ["acrobat", "kyokugeishi"] },
-    { "id": "prisoner",    "ja": "囚人",     "kana": "しゅうじん",     "aliases": ["prisoner", "shuujin"] },
-    { "id": "entomologist","ja": "昆虫学者", "kana": "こんちゅうがくしゃ","aliases": ["entomologist", "konchuugakusha"] },
-    { "id": "painter",     "ja": "画家",     "kana": "がか",           "aliases": ["painter", "gaka"] },
-    { "id": "toy_merchant","ja": "玩具職人", "kana": "がんぐしょくにん","aliases": ["toy", "merchant", "gangushokunin"] },
-    { "id": "postman",     "ja": "ポストマン","kana": "ぽすとまん",    "aliases": ["postman", "posutoman"] },
-    { "id": "grave_keeper","ja": "墓守",     "kana": "はかもり",       "aliases": ["gravekeeper", "grave", "hakamori"] },
-    { "id": "batter",      "ja": "バッツマン","kana": "ばっつまん",    "aliases": ["batter", "battsuman"] },
-    { "id": "first_officer","ja": "一等航海士","kana": "いっとうこうかいし","aliases": ["first", "航海士", "ittoukoukaishi"] },
-    { "id": "barmaid",     "ja": "バーメイド","kana": "ばーめいど",    "aliases": ["barmaid", "baameido"] },
-    { "id": "psychologist","ja": "心理学者", "kana": "しんりがくしゃ","aliases": ["psychologist", "shinrigakusha"] },
-    { "id": "patient",     "ja": "患者",     "kana": "かんじゃ",       "aliases": ["patient", "kanja"] },
-    { "id": "novelist",    "ja": "小説家",   "kana": "しょうせつか",   "aliases": ["novelist", "shousetsuka"] }
+    {
+      "id": "lucky_guy",
+      "ja": "幸運児",
+      "kana": "こううんじ",
+      "aliases": [
+        "lucky",
+        "kouunji"
+      ],
+      "name_ja": "ラッキー"
+    },
+    {
+      "id": "doctor",
+      "ja": "医師",
+      "kana": "いし",
+      "aliases": [
+        "doctor",
+        "ishi",
+        "医"
+      ],
+      "name_ja": "エミリー・ダイアー"
+    },
+    {
+      "id": "lawyer",
+      "ja": "弁護士",
+      "kana": "べんごし",
+      "aliases": [
+        "lawyer",
+        "弁",
+        "bengoshi"
+      ],
+      "name_ja": "フレディ・ライリー"
+    },
+    {
+      "id": "thief",
+      "ja": "泥棒",
+      "kana": "どろぼう",
+      "aliases": [
+        "thief",
+        "泥",
+        "dorobou"
+      ],
+      "name_ja": "クリーチャー・ピアソン"
+    },
+    {
+      "id": "gardener",
+      "ja": "庭師",
+      "kana": "にわし",
+      "aliases": [
+        "gardener",
+        "庭",
+        "niwashi"
+      ],
+      "name_ja": "エマ・ウッズ"
+    },
+    {
+      "id": "magician",
+      "ja": "マジシャン",
+      "kana": "まじしゃん",
+      "aliases": [
+        "magician",
+        "マジ",
+        "majishan"
+      ],
+      "name_ja": "セルヴェ・ル・ロイ"
+    },
+    {
+      "id": "explorer",
+      "ja": "冒険家",
+      "kana": "ぼうけんか",
+      "aliases": [
+        "explorer",
+        "冒",
+        "boukenka"
+      ],
+      "name_ja": "カート・フランク"
+    },
+    {
+      "id": "mercenary",
+      "ja": "傭兵",
+      "kana": "ようへい",
+      "aliases": [
+        "merc",
+        "mercenary",
+        "傭",
+        "youhei"
+      ],
+      "name_ja": "ナワーブ・サベダー"
+    },
+    {
+      "id": "coordinator",
+      "ja": "空軍",
+      "kana": "くうぐん",
+      "aliases": [
+        "coordinator",
+        "空",
+        "kuugun"
+      ],
+      "name_ja": "マーサ・ベハムフィール"
+    },
+    {
+      "id": "mechanic",
+      "ja": "機械技師",
+      "kana": "きかいぎし",
+      "aliases": [
+        "mechanic",
+        "技師",
+        "kikaigishi"
+      ],
+      "name_ja": "トレイシー・レズニック"
+    },
+    {
+      "id": "priestess",
+      "ja": "祭司",
+      "kana": "さいし",
+      "aliases": [
+        "priestess",
+        "祭",
+        "saishi"
+      ],
+      "name_ja": "フィオナ・ジルマン"
+    },
+    {
+      "id": "forward",
+      "ja": "オフェンス",
+      "kana": "おふぇんす",
+      "aliases": [
+        "offense",
+        "オフェ",
+        "ofensu"
+      ],
+      "name_ja": "ウィリアム・エリス"
+    },
+    {
+      "id": "minds_eye",
+      "ja": "心眼",
+      "kana": "しんがん",
+      "aliases": [
+        "minds_eye",
+        "心",
+        "shingan"
+      ],
+      "name_ja": "ヘレナ・アダムス"
+    },
+    {
+      "id": "perfumer",
+      "ja": "調香師",
+      "kana": "ちょうこうし",
+      "aliases": [
+        "perfumer",
+        "調",
+        "choukoushi"
+      ],
+      "name_ja": "ウィラ・ナイエル"
+    },
+    {
+      "id": "cowboy",
+      "ja": "カウボーイ",
+      "kana": "かうぼーい",
+      "aliases": [
+        "cowboy",
+        "kauboi"
+      ],
+      "name_ja": "カヴィン・アユソ"
+    },
+    {
+      "id": "dancer",
+      "ja": "踊り子",
+      "kana": "おどりこ",
+      "aliases": [
+        "dancer",
+        "odoriko"
+      ],
+      "name_ja": "マルガレータ・ツェレ"
+    },
+    {
+      "id": "seer",
+      "ja": "占い師",
+      "kana": "うらないし",
+      "aliases": [
+        "seer",
+        "占",
+        "uranaishi"
+      ],
+      "name_ja": "イライ・クラーク"
+    },
+    {
+      "id": "embalmer",
+      "ja": "納棺師",
+      "kana": "のうかんし",
+      "aliases": [
+        "embalmer",
+        "納",
+        "noukanshi"
+      ],
+      "name_ja": "イソップ・カール"
+    },
+    {
+      "id": "prospector",
+      "ja": "探鉱者",
+      "kana": "たんこうしゃ",
+      "aliases": [
+        "prospector",
+        "探",
+        "tankousha"
+      ],
+      "name_ja": "ノートン・キャンベル"
+    },
+    {
+      "id": "enchantress",
+      "ja": "呪術師",
+      "kana": "じゅじゅつし",
+      "aliases": [
+        "enchantress",
+        "呪",
+        "jujutsushi"
+      ],
+      "name_ja": "パトリシア・ドーヴァル"
+    },
+    {
+      "id": "wildling",
+      "ja": "野人",
+      "kana": "やじん",
+      "aliases": [
+        "wildling",
+        "野",
+        "yajin"
+      ],
+      "name_ja": "モウロ"
+    },
+    {
+      "id": "acrobat",
+      "ja": "曲芸師",
+      "kana": "きょくげいし",
+      "aliases": [
+        "acrobat",
+        "kyokugeishi"
+      ],
+      "name_ja": "マイク・モートン"
+    },
+    {
+      "id": "first_officer",
+      "ja": "一等航海士",
+      "kana": "いっとうこうかいし",
+      "aliases": [
+        "first",
+        "航海士",
+        "ittoukoukaishi"
+      ],
+      "name_ja": "ホセ・バーデン"
+    },
+    {
+      "id": "barmaid",
+      "ja": "バーメイド",
+      "kana": "ばーめいど",
+      "aliases": [
+        "barmaid",
+        "baameido"
+      ],
+      "name_ja": "デミ・バーボン"
+    },
+    {
+      "id": "postman",
+      "ja": "ポストマン",
+      "kana": "ぽすとまん",
+      "aliases": [
+        "postman",
+        "posutoman"
+      ],
+      "name_ja": "ビクター・グランツ"
+    },
+    {
+      "id": "grave_keeper",
+      "ja": "墓守",
+      "kana": "はかもり",
+      "aliases": [
+        "gravekeeper",
+        "grave",
+        "hakamori"
+      ],
+      "name_ja": "アンドルー・クレス"
+    },
+    {
+      "id": "prisoner",
+      "ja": "囚人",
+      "kana": "しゅうじん",
+      "aliases": [
+        "prisoner",
+        "shuujin"
+      ],
+      "name_ja": "ルカ・バルサー"
+    },
+    {
+      "id": "entomologist",
+      "ja": "昆虫学者",
+      "kana": "こんちゅうがくしゃ",
+      "aliases": [
+        "entomologist",
+        "konchuugakusha"
+      ],
+      "name_ja": "メリー・プリニウス"
+    },
+    {
+      "id": "painter",
+      "ja": "画家",
+      "kana": "がか",
+      "aliases": [
+        "painter",
+        "gaka"
+      ],
+      "name_ja": "エドガー・ワルデン"
+    },
+    {
+      "id": "batter",
+      "ja": "バッツマン",
+      "kana": "ばっつまん",
+      "aliases": [
+        "batter",
+        "battsuman"
+      ],
+      "name_ja": "ガンジ・グプタ"
+    },
+    {
+      "id": "toy_merchant",
+      "ja": "玩具職人",
+      "kana": "がんぐしょくにん",
+      "aliases": [
+        "toy",
+        "merchant",
+        "gangushokunin"
+      ],
+      "name_ja": "アニー・レスター"
+    },
+    {
+      "id": "patient",
+      "ja": "患者",
+      "kana": "かんじゃ",
+      "aliases": [
+        "patient",
+        "kanja"
+      ],
+      "name_ja": "エミール"
+    },
+    {
+      "id": "psychologist",
+      "ja": "心理学者",
+      "kana": "しんりがくしゃ",
+      "aliases": [
+        "psychologist",
+        "shinrigakusha"
+      ],
+      "name_ja": "エダ・メスマー"
+    },
+    {
+      "id": "novelist",
+      "ja": "小説家",
+      "kana": "しょうせつか",
+      "aliases": [
+        "novelist",
+        "shousetsuka"
+      ],
+      "name_ja": "オルフェウス"
+    },
+    {
+      "id": "little_girl",
+      "ja": "少女",
+      "kana": "しょうじょ",
+      "aliases": [
+        "little_girl",
+        "少女",
+        "shoujo"
+      ],
+      "name_ja": "「記憶」"
+    },
+    {
+      "id": "weeping_clown",
+      "ja": "泣きピエロ",
+      "kana": "なきぴえろ",
+      "aliases": [
+        "weeping_clown",
+        "泣き",
+        "nakipiero"
+      ],
+      "name_ja": "ジョーカー"
+    },
+    {
+      "id": "professor",
+      "ja": "教授",
+      "kana": "きょうじゅ",
+      "aliases": [
+        "professor",
+        "教",
+        "kyouju"
+      ],
+      "name_ja": "ルキノ・ドゥルギ"
+    },
+    {
+      "id": "antiquarian",
+      "ja": "骨董商",
+      "kana": "こっとうしょう",
+      "aliases": [
+        "antiquarian",
+        "骨董",
+        "kottoushou"
+      ],
+      "name_ja": "戚十一"
+    },
+    {
+      "id": "composer",
+      "ja": "作曲家",
+      "kana": "さっきょくか",
+      "aliases": [
+        "composer",
+        "作曲",
+        "sakkyokuka"
+      ],
+      "name_ja": "フレデリック・クレイバーグ"
+    },
+    {
+      "id": "journalist",
+      "ja": "記者",
+      "kana": "きしゃ",
+      "aliases": [
+        "journalist",
+        "記",
+        "kisha"
+      ],
+      "name_ja": "アリス・デロス"
+    },
+    {
+      "id": "aeronautical_engineer",
+      "ja": "航空エンジニア",
+      "kana": "こうくうえんじにあ",
+      "aliases": [
+        "aeronautical",
+        "航空",
+        "koukuu"
+      ],
+      "name_ja": "チャールス・ホルト"
+    },
+    {
+      "id": "cheerleader",
+      "ja": "応援団",
+      "kana": "おうえんだん",
+      "aliases": [
+        "cheerleader",
+        "応援",
+        "ouendan"
+      ],
+      "name_ja": "リリー・バリエル"
+    },
+    {
+      "id": "puppeteer_survivor",
+      "ja": "人形師",
+      "kana": "にんぎょうし",
+      "aliases": [
+        "puppeteer",
+        "人形",
+        "ningyoushi"
+      ],
+      "name_ja": "マティアス・チェルニン"
+    },
+    {
+      "id": "fire_investigator",
+      "ja": "火災調査員",
+      "kana": "かさいちょうさいん",
+      "aliases": [
+        "fire_investigator",
+        "火災",
+        "kasai"
+      ],
+      "name_ja": "フロリアン・ブランド"
+    },
+    {
+      "id": "lady_fauro",
+      "ja": "レディ・ファウロ",
+      "kana": "れでぃ・ふぁうろ",
+      "aliases": [
+        "lady_fauro",
+        "ファウロ",
+        "fauro"
+      ],
+      "name_ja": "エブリン・モレー"
+    },
+    {
+      "id": "knight",
+      "ja": "騎士",
+      "kana": "きし",
+      "aliases": [
+        "knight",
+        "騎",
+        "kishi"
+      ],
+      "name_ja": "リチャード・スターリング"
+    },
+    {
+      "id": "meteorologist",
+      "ja": "気象学者",
+      "kana": "きしょうがくしゃ",
+      "aliases": [
+        "meteorologist",
+        "気象",
+        "kishou"
+      ],
+      "name_ja": "ウェンディ・フート"
+    },
+    {
+      "id": "archer",
+      "ja": "弓使い",
+      "kana": "ゆみつかい",
+      "aliases": [
+        "archer",
+        "弓",
+        "yumi"
+      ],
+      "name_ja": "ブリュンヒルド・ウェルフ"
+    },
+    {
+      "id": "escapologist",
+      "ja": "脱出マスター",
+      "kana": "だっしゅつますたー",
+      "aliases": [
+        "escapologist",
+        "脱出",
+        "dasshutsu"
+      ],
+      "name_ja": "エフロン･ワイズ"
+    }
   ],
   "hunters": [
-    { "id": "hell_ember",   "ja": "復讐者",     "kana": "ふくしゅうしゃ", "aliases": ["hell", "ember", "fukushuusha"] },
-    { "id": "smiley_face",  "ja": "道化師",     "kana": "どうけし",       "aliases": ["smiley", "doukeshi"] },
-    { "id": "gamekeeper",   "ja": "断罪狩人",   "kana": "だんざいかりゅうど","aliases": ["gamekeeper", "danzai"] },
-    { "id": "ripper",       "ja": "リッパー",   "kana": "りっぱー",       "aliases": ["ripper", "rippaa"] },
-    { "id": "soul_weaver",  "ja": "結魂者",     "kana": "けっこんしゃ",   "aliases": ["soul", "weaver", "蜘蛛", "kekkonsha"] },
-    { "id": "photographer", "ja": "写像師",     "kana": "しゃぞうし",     "aliases": ["photo", "写", "shazoushi"] },
-    { "id": "geisha",       "ja": "芸者",       "kana": "げいしゃ",       "aliases": ["geisha", "芸"] },
-    { "id": "feaster",      "ja": "黄衣の王",   "kana": "おういのおう",   "aliases": ["feaster", "ouinoou"] },
-    { "id": "wu_chang",     "ja": "白黒無常",   "kana": "しろくろむじょう","aliases": ["wuchang", "shirokuromujou"] },
-    { "id": "dream_witch",  "ja": "夢の魔女",   "kana": "ゆめのまじょ",   "aliases": ["dream", "witch", "yumenomajo"] },
-    { "id": "mad_eyes",     "ja": "狂眼",       "kana": "きょうがん",     "aliases": ["madeyes", "kyougan"] },
-    { "id": "evil_reptilian","ja": "魔トカゲ",  "kana": "まとかげ",       "aliases": ["reptilian", "とかげ", "matokage"] },
-    { "id": "bloody_queen", "ja": "血の女王",   "kana": "ちのじょおう",   "aliases": ["bq", "bloodyqueen", "chinojoou"] },
-    { "id": "violinist",    "ja": "ヴァイオリニスト","kana": "う゛ぁいおりにすと","aliases": ["violinist", "vaiorinisuto"] },
-    { "id": "disciple",     "ja": "使徒",       "kana": "しと",           "aliases": ["disciple", "shito"] },
-    { "id": "sculptor",     "ja": "彫刻師",     "kana": "ちょうこくし",   "aliases": ["sculptor", "ガラテア", "choukokushi", "garatea"] },
-    { "id": "breaking_wheel","ja": "破輪",      "kana": "はりん",         "aliases": ["wheel", "harin"] }
+    {
+      "id": "hell_ember",
+      "ja": "復讐者",
+      "kana": "ふくしゅうしゃ",
+      "aliases": [
+        "hell",
+        "ember",
+        "fukushuusha"
+      ],
+      "name_ja": "レオ・ベイカー"
+    },
+    {
+      "id": "smiley_face",
+      "ja": "道化師",
+      "kana": "どうけし",
+      "aliases": [
+        "smiley",
+        "doukeshi"
+      ],
+      "name_ja": "ジョーカー"
+    },
+    {
+      "id": "gamekeeper",
+      "ja": "断罪狩人",
+      "kana": "だんざいかりゅうど",
+      "aliases": [
+        "gamekeeper",
+        "danzai"
+      ],
+      "name_ja": "ベイン・ペレッツ"
+    },
+    {
+      "id": "ripper",
+      "ja": "リッパー",
+      "kana": "りっぱー",
+      "aliases": [
+        "ripper",
+        "rippaa"
+      ],
+      "name_ja": "ジャック"
+    },
+    {
+      "id": "soul_weaver",
+      "ja": "結魂者",
+      "kana": "けっこんしゃ",
+      "aliases": [
+        "soul",
+        "weaver",
+        "蜘蛛",
+        "kekkonsha"
+      ],
+      "name_ja": "ヴィオレッタ"
+    },
+    {
+      "id": "geisha",
+      "ja": "芸者",
+      "kana": "げいしゃ",
+      "aliases": [
+        "geisha",
+        "芸"
+      ],
+      "name_ja": "美智子"
+    },
+    {
+      "id": "wu_chang",
+      "ja": "白黒無常",
+      "kana": "しろくろむじょう",
+      "aliases": [
+        "wuchang",
+        "shirokuromujou"
+      ],
+      "name_ja": "謝必安 & 范無咎"
+    },
+    {
+      "id": "photographer",
+      "ja": "写真家",
+      "kana": "しゃしんか",
+      "aliases": [
+        "photographer",
+        "写真家",
+        "photo",
+        "shashinka"
+      ],
+      "name_ja": "ジョゼフ・デソルニエーズ"
+    },
+    {
+      "id": "mad_eyes",
+      "ja": "狂眼",
+      "kana": "きょうがん",
+      "aliases": [
+        "madeyes",
+        "kyougan"
+      ],
+      "name_ja": "バルク・ラパドゥーラ"
+    },
+    {
+      "id": "feaster",
+      "ja": "黄衣の王",
+      "kana": "こういのおう",
+      "aliases": [
+        "feaster",
+        "黄衣の王",
+        "kouinoou"
+      ],
+      "name_ja": "ハスター"
+    },
+    {
+      "id": "dream_witch",
+      "ja": "夢の魔女",
+      "kana": "ゆめのまじょ",
+      "aliases": [
+        "dream",
+        "witch",
+        "yumenomajo"
+      ],
+      "name_ja": "イドーラ"
+    },
+    {
+      "id": "axe_boy",
+      "ja": "泣き虫",
+      "kana": "なきむし",
+      "aliases": [
+        "axe_boy",
+        "泣き虫",
+        "nakimushi"
+      ],
+      "name_ja": "ロビー・ホワイト"
+    },
+    {
+      "id": "evil_reptilian",
+      "ja": "魔トカゲ",
+      "kana": "まとかげ",
+      "aliases": [
+        "reptilian",
+        "とかげ",
+        "matokage"
+      ],
+      "name_ja": "ルキノ・ドゥルギ"
+    },
+    {
+      "id": "bloody_queen",
+      "ja": "血の女王",
+      "kana": "ちのじょおう",
+      "aliases": [
+        "bq",
+        "bloodyqueen",
+        "chinojoou"
+      ],
+      "name_ja": "マリー"
+    },
+    {
+      "id": "guard_26",
+      "ja": "ガードNo.26",
+      "kana": "がーどなんばーにじゅうろく",
+      "aliases": [
+        "guard_26",
+        "No26",
+        "guardno26"
+      ],
+      "name_ja": "ボンボン"
+    },
+    {
+      "id": "disciple",
+      "ja": "使徒",
+      "kana": "しと",
+      "aliases": [
+        "disciple",
+        "shito"
+      ],
+      "name_ja": "アン"
+    },
+    {
+      "id": "violinist",
+      "ja": "ヴァイオリニスト",
+      "kana": "ゔぁいおりにすと",
+      "aliases": [
+        "violinist",
+        "vaiorinisuto"
+      ],
+      "name_ja": "アントニオ"
+    },
+    {
+      "id": "sculptor",
+      "ja": "彫刻師",
+      "kana": "ちょうこくし",
+      "aliases": [
+        "sculptor",
+        "ガラテア",
+        "choukokushi",
+        "garatea"
+      ],
+      "name_ja": "ガラテア"
+    },
+    {
+      "id": "breaking_wheel",
+      "ja": "破輪",
+      "kana": "はりん",
+      "aliases": [
+        "wheel",
+        "harin"
+      ],
+      "name_ja": "ウィル兄弟"
+    },
+    {
+      "id": "fisherman",
+      "ja": "漁師",
+      "kana": "りょうし",
+      "aliases": [
+        "fisherman",
+        "naiad",
+        "ryoushi"
+      ],
+      "name_ja": "グレイス"
+    },
+    {
+      "id": "wax_artist",
+      "ja": "蝋人形師",
+      "kana": "ろうにんぎょうし",
+      "aliases": [
+        "wax_artist",
+        "蝋",
+        "rouningyoushi"
+      ],
+      "name_ja": "フィリップ"
+    },
+    {
+      "id": "nightmare",
+      "ja": "悪夢",
+      "kana": "あくむ",
+      "aliases": [
+        "nightmare",
+        "オルフェウス",
+        "akumu"
+      ],
+      "name_ja": "オルフェウス"
+    },
+    {
+      "id": "clerk",
+      "ja": "書記官",
+      "kana": "しょきかん",
+      "aliases": [
+        "clerk",
+        "書記",
+        "shokikan"
+      ],
+      "name_ja": "キーガン"
+    },
+    {
+      "id": "hermit",
+      "ja": "隠者",
+      "kana": "いんじゃ",
+      "aliases": [
+        "hermit",
+        "アルヴァ",
+        "inja"
+      ],
+      "name_ja": "アルヴァ・ロレンツ"
+    },
+    {
+      "id": "night_watch",
+      "ja": "夜の番人",
+      "kana": "よるのばんにん",
+      "aliases": [
+        "night_watch",
+        "番人",
+        "yoru"
+      ],
+      "name_ja": "イタカ"
+    },
+    {
+      "id": "opera_singer",
+      "ja": "オペラ歌手",
+      "kana": "おぺらかしゅ",
+      "aliases": [
+        "opera_singer",
+        "オペラ",
+        "opera"
+      ],
+      "name_ja": "サングリア"
+    },
+    {
+      "id": "time_shadow",
+      "ja": "時空の影",
+      "kana": "じくうのかげ",
+      "aliases": [
+        "time_shadow",
+        "時空",
+        "jikuu"
+      ],
+      "name_ja": "アイヴィ"
+    },
+    {
+      "id": "fools_gold",
+      "ja": "フールズ・ゴールド",
+      "kana": "ふーるず・ごーるど",
+      "aliases": [
+        "fools_gold",
+        "フールズ",
+        "fools"
+      ],
+      "name_ja": "ノートン・キャンベル"
+    },
+    {
+      "id": "billiard_player",
+      "ja": "ビリヤードプレイヤー",
+      "kana": "びりやーどぷれいやー",
+      "aliases": [
+        "billiard_player",
+        "ビリヤード",
+        "billiard"
+      ],
+      "name_ja": "マーカス・ソーン"
+    },
+    {
+      "id": "undead",
+      "ja": "アンデッド",
+      "kana": "あんでっど",
+      "aliases": [
+        "undead",
+        "ペルシー",
+        "andeddo"
+      ],
+      "name_ja": "ペルシー"
+    },
+    {
+      "id": "lame_sheep",
+      "ja": "足萎えの羊",
+      "kana": "あしなえのひつじ",
+      "aliases": [
+        "足萎えの羊",
+        "ashinae",
+        "lame_sheep"
+      ],
+      "name_ja": "ジェフリー・ボナヴィータ"
+    },
+    {
+      "id": "flaneur",
+      "ja": "フラバルー",
+      "kana": "ふらばるー",
+      "aliases": [
+        "フラバルー",
+        "flaneur"
+      ],
+      "name_ja": "マイク・モートン"
+    },
+    {
+      "id": "peddler",
+      "ja": "雑貨商",
+      "kana": "ざっかしょう",
+      "aliases": [
+        "雑貨商",
+        "zakkasho",
+        "peddler"
+      ],
+      "name_ja": "バレンティナ・ヤガ・ヴァシーリエヴァ"
+    }
   ]
 }
