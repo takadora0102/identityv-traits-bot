@@ -39,7 +39,7 @@ function search(role, q, limit = 25, excludeIds = new Set()) {
 
   for (const row of list) {
     if (excludeIds.has(row.id)) continue;
-    const cand = [row.ja, row.kana, row.id, ...(row.aliases || [])]
+    const cand = [row.ja, row.name_ja, row.kana, row.id, ...(row.aliases || [])]
       .filter(Boolean)
       .map(normalize);
 
