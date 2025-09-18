@@ -16,7 +16,15 @@ const { updatePanel } = require('../core/render');
 const { search } = require('../utils/search');
 
 function ensureRank(state) {
-  state.rank ||= { mapName: null, bansSurv: [], bansHun: [], picksSurv: [], pickHunter: null, matchId: null };
+  state.rank ||= {
+    mapName: null,
+    bansSurv: [],
+    bansHun: [],
+    picksSurv: [],
+    pickHunter: null,
+    matchId: null,
+    matchResult: null,
+  };
   return state.rank;
 }
 

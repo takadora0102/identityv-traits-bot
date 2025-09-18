@@ -56,6 +56,12 @@ const URAMUKI_OPTIONS = [
   { key: 'listen',      label: 'リッスン' },
 ];
 
+const MATCH_RESULT_LABELS = {
+  win: 'ハンター勝利',
+  draw: '引き分け',
+  lose: 'ハンター敗北',
+};
+
 function buildUramukiRow(state) {
   const enabled = state.matchActive &&
                   !state.usedUramuki &&
@@ -77,14 +83,16 @@ function buildUramukiRow(state) {
   return new ActionRowBuilder().addComponents(select);
 }
 
+function buildVoiceDisconnectButton(state) {
+  return new ButtonBuilder()
+    .setCustomId('voice:disconnect')
+    .setLabel('🔌 VC切断')
+    .setStyle(ButtonStyle.Danger)
+    .setDisabled(!state.voiceChannelId);
+}
+
 function buildVoiceControlRow(state) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('voice:disconnect')
-      .setLabel('🔌 VC切断')
-      .setStyle(ButtonStyle.Danger)
-      .setDisabled(!state.voiceChannelId)
-  );
+  return new ActionRowBuilder().addComponents(buildVoiceDisconnectButton(state));
 }
 
 // ---- ランク/マルチ 入口（/setup直後）
@@ -242,6 +250,11 @@ function buildInGameEmbed(guildId, state) {
   } else {
     lines.push(`・判明特質: ${state.revealedLabel ?? state.revealedKey}`);
   }
+  if (state.mode === 'rank') {
+    const result = state.rank?.matchResult;
+    const label = result ? MATCH_RESULT_LABELS[result] || result : '未入力';
+    lines.push(`・結果入力: ${label}`);
+  }
   return new EmbedBuilder()
     .setColor(0xC863)
     .setTitle('Identity V 特質CTコントローラ')
@@ -253,11 +266,16 @@ function buildInGameEmbed(guildId, state) {
 function buildInGameRows(state) {
   const rows = [];
 
-  // 上段：試合終了 / 次の試合開始
+  // 上段：試合終了 / 次の試合開始 / VC切断
   rows.push(new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('game:end').setLabel('🛑 試合終了').setStyle(ButtonStyle.Danger),
     new ButtonBuilder().setCustomId('game:next').setLabel('▶ 次の試合開始').setStyle(ButtonStyle.Secondary),
+    buildVoiceDisconnectButton(state),
   ));
+
+  if (state.mode === 'rank') {
+    rows.push(buildResultRow(state));
+  }
 
   // 中段：特質操作ボタン（2行に分けて配置）
   const traitButtons = URAMUKI_OPTIONS.map(o =>
@@ -272,9 +290,30 @@ function buildInGameRows(state) {
   // 下段：裏向きカード（常時表示、120sでenable）
   rows.push(buildUramukiRow(state));
 
-  rows.push(buildVoiceControlRow(state));
-
   return rows.slice(0, 5);
+}
+
+function buildResultRow(state) {
+  const rankState = state.rank || {};
+  const current = rankState.matchResult;
+  const hasMatch = Boolean(rankState.matchId);
+
+  const buttons = [
+    { value: 'win',  style: ButtonStyle.Success },
+    { value: 'draw', style: ButtonStyle.Secondary },
+    { value: 'lose', style: ButtonStyle.Danger },
+  ].map(({ value, style }) => {
+    const baseLabel = MATCH_RESULT_LABELS[value] || value;
+    const isSelected = current === value;
+    const label = isSelected ? `✅ ${baseLabel}` : baseLabel;
+    return new ButtonBuilder()
+      .setCustomId(`result:${value}`)
+      .setLabel(label)
+      .setStyle(style)
+      .setDisabled(!hasMatch);
+  });
+
+  return new ActionRowBuilder().addComponents(...buttons);
 }
 
 // ---- メイン：状態に応じた描画

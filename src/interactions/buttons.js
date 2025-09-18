@@ -16,6 +16,7 @@ const {
   startTraitCooldown,
 } = require('../core/scheduler');
 const { enqueueTokens, stopAll, disconnect } = require('../voice/player');
+const { updateMatch, closeMatch } = require('../db');
 
 // 特質テーブル（抜粋例：実プロジェクトの既存 state.traits を利用してください）
 const NEXT_CT = { // nextサイクル（通常CT）
@@ -58,7 +59,83 @@ function createInitialRankState() {
     picksSurv: [],
     pickHunter: null,
     matchId: null,
+    matchResult: null,
   };
+}
+
+const MATCH_RESULT_VALUES = new Set(['win', 'draw', 'lose']);
+
+function collectRankMeta(state) {
+  const rankState = state.rank || {};
+  const now = new Date();
+  const meta = {
+    map: rankState.mapName ?? null,
+    bansSurv: Array.isArray(rankState.bansSurv) ? [...rankState.bansSurv] : [],
+    bansHun: Array.isArray(rankState.bansHun) ? [...rankState.bansHun] : [],
+    picksSurv: Array.isArray(rankState.picksSurv) ? [...rankState.picksSurv] : [],
+    pickHunter: rankState.pickHunter ?? null,
+    finalTrait: state.revealedKey
+      ? {
+          key: state.revealedKey,
+          label: state.revealedLabel ?? null,
+        }
+      : null,
+    usedUramuki: Boolean(state.usedUramuki),
+    updatedAt: now.toISOString(),
+  };
+
+  if (state.matchStartAt) {
+    const durationMs = Math.max(0, now.getTime() - state.matchStartAt);
+    meta.durationSec = Math.round(durationMs / 1000);
+  }
+
+  return meta;
+}
+
+async function writeMatchUpdate(state, patch = {}) {
+  const matchId = state.rank?.matchId;
+  if (!matchId) return;
+
+  const finalPatch = { ...patch };
+  if (!('meta' in finalPatch)) {
+    finalPatch.meta = collectRankMeta(state);
+  }
+  if (!('result' in finalPatch)) {
+    const currentResult = state.rank?.matchResult;
+    if (currentResult) finalPatch.result = currentResult;
+  }
+
+  try {
+    await updateMatch(matchId, finalPatch);
+  } catch (err) {
+    console.error(`[buttons] failed to update match ${matchId}`, err);
+  }
+}
+
+async function finalizeMatch(state) {
+  const matchId = state.rank?.matchId;
+  if (!matchId) return;
+
+  await writeMatchUpdate(state);
+  try {
+    await closeMatch(matchId);
+  } catch (err) {
+    console.error(`[buttons] failed to close match ${matchId}`, err);
+  }
+}
+
+function clearRankMatchCache(state) {
+  if (state.rank) {
+    state.rank.matchId = null;
+    state.rank.matchResult = null;
+  }
+  try {
+    const shared = getCoreGuildState(state.guildId);
+    if (shared?.rank) {
+      shared.rank.matchId = null;
+      shared.rank.matchResult = null;
+    }
+  } catch {}
 }
 
 function getGuildState(client, interaction) {
@@ -200,10 +277,13 @@ async function handle(interaction, client) {
     // ランク：DBへの createMatch は rank.js 側で行う（必要に応じて）
     enqueueTokens(state.guildId, ['shiai_kaishi']); // 「試合開始」
     scheduleMatchStart(client, state);
+    if (state.rank) state.rank.matchResult = null;
     return updatePanel(client, state, interaction);
   }
 
   if (interaction.isButton() && id === 'game:end') {
+    await finalizeMatch(state);
+    clearRankMatchCache(state);
     // 試合終了：音声 & 状態リセット（ランクは rank.js 側で結果入力 → save）
     enqueueTokens(state.guildId, ['shiai_shuuryou']);
     state.matchActive = false;
@@ -220,9 +300,15 @@ async function handle(interaction, client) {
   }
 
   if (interaction.isButton() && id === 'game:next') {
+    await finalizeMatch(state);
+    clearRankMatchCache(state);
     // 待機へ戻す（入口へ）
     state.mode = null;
     state.rank = createInitialRankState();
+    try {
+      const shared = getCoreGuildState(state.guildId);
+      if (shared) shared.rank = createInitialRankState();
+    } catch {}
     state.matchActive = false;
     state.matchStartAt = null;
     state.usedUramuki = false;
@@ -232,6 +318,18 @@ async function handle(interaction, client) {
       if (t.uiInterval) clearInterval(t.uiInterval);
       t.uiInterval = null; t.endsAt = 0;
     }
+    return updatePanel(client, state, interaction);
+  }
+
+  if (interaction.isButton() && id.startsWith('result:')) {
+    const result = id.split(':')[1];
+    if (!MATCH_RESULT_VALUES.has(result)) {
+      return updatePanel(client, state, interaction);
+    }
+
+    state.rank = state.rank || createInitialRankState();
+    state.rank.matchResult = result;
+    await writeMatchUpdate(state, { result });
     return updatePanel(client, state, interaction);
   }
 
