@@ -17,6 +17,7 @@ const {
   startTraitCooldown,
 } = require('../core/scheduler');
 const { enqueueTokens, stopAll, disconnect } = require('../voice/player');
+const { updateMatch } = require('../db');
 
 // 特質テーブル（抜粋例：実プロジェクトの既存 state.traits を利用してください）
 const NEXT_CT = { // nextサイクル（通常CT）
@@ -131,6 +132,41 @@ function convertRemaining(oldKey, newKey, remainSec) {
   let res = Math.round((remainSec * newBase) / oldBase);
   if (newKey === 'listen') res = Math.min(res, 80);
   return Math.max(0, res);
+}
+
+function snapshotMatchMeta(state) {
+  const now = Date.now();
+  const traitCooldowns = {};
+  for (const [key, trait] of Object.entries(state.traits || {})) {
+    const endsAt = typeof trait?.endsAt === 'number' ? trait.endsAt : 0;
+    const remainingMs = Math.max(0, endsAt - now);
+    traitCooldowns[key] = {
+      token: trait?.token ?? null,
+      endsAt,
+      remainingMs,
+      remainingSec: Math.max(0, Math.ceil(remainingMs / 1000)),
+    };
+  }
+
+  return {
+    revealedKey: state.revealedKey ?? null,
+    revealedLabel: state.revealedLabel ?? null,
+    usedUramuki: Boolean(state.usedUramuki),
+    matchActive: Boolean(state.matchActive),
+    matchStartAt: state.matchStartAt ?? null,
+    traitCooldowns,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+async function persistMatchMeta(state, context) {
+  const matchId = state?.rank?.matchId;
+  if (!matchId) return;
+  try {
+    await updateMatch(matchId, { meta: snapshotMatchMeta(state) });
+  } catch (err) {
+    console.error(`[buttons] failed to persist match meta (${context})`, err);
+  }
 }
 
 // 初期CTの予約（4特質 + 裏向きカード120s enable）
@@ -301,7 +337,10 @@ async function handle(interaction, client) {
     const ct = NEXT_CT[key] ?? 100;
     startTraitCooldown(client, state, key, ct, { isInitial: false });
     enqueueTokens(state.guildId, [state.traits[key].token, 'tsukatta']);
-    return updatePanel(client, state, interaction);
+    const persistPromise = persistMatchMeta(state, `trait:used:${key}`);
+    await updatePanel(client, state, interaction);
+    await persistPromise;
+    return;
   }
 
   // 裏向きカード（常時表示：120秒まで disabled。120秒以降 & 未使用なら可）
@@ -318,7 +357,10 @@ async function handle(interaction, client) {
       state.revealedLabel = TRAIT_LABELS[newKey] || newKey;
       state.usedUramuki = true;
       enqueueTokens(state.guildId, [state.traits[newKey].token, 'ari']);
-      return updatePanel(client, state, interaction);
+      const persistPromise = persistMatchMeta(state, `uramuki:reveal:${newKey}`);
+      await updatePanel(client, state, interaction);
+      await persistPromise;
+      return;
     }
 
     // 判明済み → 残りから比率変換
@@ -332,10 +374,16 @@ async function handle(interaction, client) {
 
     if (newRemain <= 0) {
       enqueueTokens(state.guildId, [state.traits[newKey].token, 'ari']);
-      return updatePanel(client, state, interaction);
+      const persistPromise = persistMatchMeta(state, `uramuki:instant:${oldKey}->${newKey}`);
+      await updatePanel(client, state, interaction);
+      await persistPromise;
+      return;
     }
     startTraitCooldown(client, state, newKey, newRemain, { isInitial: false });
-    return updatePanel(client, state, interaction);
+    const persistPromise = persistMatchMeta(state, `uramuki:convert:${oldKey}->${newKey}`);
+    await updatePanel(client, state, interaction);
+    await persistPromise;
+    return;
   }
 
   // ここに到達したら UI だけ更新
