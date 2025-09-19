@@ -11,8 +11,9 @@ function startScheduler(_client) {
 }
 
 function scheduleAfter(ms, fn) {
-  const d = Math.max(1, ms | 0);
-  return setTimeout(fn, d);
+  // guard against negative delay
+  const delay = Math.max(0, Math.ceil(ms));
+  return setTimeout(fn, delay);
 }
 
 // marks: 60/30/10/5/3/2/1/0（残りがそれ以上ある場合のみ予約）

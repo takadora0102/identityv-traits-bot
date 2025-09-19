@@ -66,10 +66,16 @@ module.exports = {
       [30, 10, 5].forEach(p => pts.push(p));
       pts.forEach(p => {
         if (newRemain > p) {
-          setTimeout(() => sayRemain(state, newKey, p), (newRemain - p) * 1000);
+          const waitMs = (newRemain - p) * 1000;
+          // guard against negative delay
+          const delay = Math.max(0, Math.ceil(waitMs));
+          setTimeout(() => sayRemain(state, newKey, p), delay);
         }
       });
-      setTimeout(() => sayReady(state, newKey), newRemain * 1000);
+      const readyMs = newRemain * 1000;
+      // guard against negative delay
+      const readyDelay = Math.max(0, Math.ceil(readyMs));
+      setTimeout(() => sayReady(state, newKey), readyDelay);
     }
 
     // 裏向きカードは一度で消費

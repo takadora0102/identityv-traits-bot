@@ -188,11 +188,13 @@ function scheduleMatchStart(client, state) {
   const notify = (sec) => {
     const when = accelAt - sec * 1000;
     const wait = when - Date.now();
+    // guard against negative delay
+    const delay = Math.max(0, Math.ceil(wait));
     setTimeout(() => {
       if (!state.matchActive) return;
       if (sec === 0) enqueueTokens(state.guildId, ['kaidoku_kasoku', 'hatsudou']); // 任意の音声構成
       else enqueueTokens(state.guildId, ['kaidoku_kasoku', 'nokori', `${sec}byo`]);
-    }, Math.max(1, wait | 0));
+    }, delay);
   };
   for (const m of [60, 30, 0]) notify(m);
 }
