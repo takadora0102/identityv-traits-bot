@@ -31,7 +31,14 @@ async function init() {
   console.log('[db] init ok');
 }
 
+function assertMode(mode) {
+  if (!['rank', 'multi'].includes(mode)) {
+    throw new Error(`[db] invalid mode: ${mode} (allowed: 'rank'|'multi')`);
+  }
+}
+
 async function createMatch({ guildId, channelId, mode, createdBy }) {
+  assertMode(mode);
   const res = await pool.query(
     `insert into matches (guild_id, channel_id, started_at, mode, created_by)
      values ($1,$2, now(), $3, $4) returning id`,
