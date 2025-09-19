@@ -1,3 +1,4 @@
+const { MessageFlags } = require('discord.js');
 const { getGuildState, cancelAllAnnouncements } = require('../core/state');
 const { TRAITS } = require('../core/constants');
 const { convertRemainSec, watcherFromRemain } = require('../core/convert');
@@ -14,19 +15,19 @@ module.exports = {
     const state = getGuildState(guild.id);
 
     if (!state.game.startedAt) {
-      return interaction.reply({ content: '先に「ゲーム開始」を押してください。', ephemeral: true });
+      return interaction.reply({ content: '先に「ゲーム開始」を押してください。', flags: MessageFlags.Ephemeral });
     }
     if (state.game.backcardUsed) {
-      return interaction.reply({ content: '裏向きカードは既に使用済みです。', ephemeral: true });
+      return interaction.reply({ content: '裏向きカードは既に使用済みです。', flags: MessageFlags.Ephemeral });
     }
     if (!state.game.activeTraitKey) {
-      return interaction.reply({ content: 'まずは特質を1回使用し、確定させてください。', ephemeral: true });
+      return interaction.reply({ content: 'まずは特質を1回使用し、確定させてください。', flags: MessageFlags.Ephemeral });
     }
 
     const newKey = interaction.values[0];
     const oldKey = state.game.activeTraitKey;
     if (newKey === oldKey) {
-      return interaction.reply({ content: '同じ特質へは変更できません。', ephemeral: true });
+      return interaction.reply({ content: '同じ特質へは変更できません。', flags: MessageFlags.Ephemeral });
     }
 
     // 旧特質の残りCTを取得（監視者はゲージ換算）
@@ -85,6 +86,6 @@ module.exports = {
       console.warn('panel edit (backcard) failed:', e.message);
     }
 
-    return interaction.reply({ content: `🔁 裏向きカードで **${TRAITS[oldKey].label} → ${TRAITS[newKey].label}** に変更しました。`, ephemeral: true });
+    return interaction.reply({ content: `🔁 裏向きカードで **${TRAITS[oldKey].label} → ${TRAITS[newKey].label}** に変更しました。`, flags: MessageFlags.Ephemeral });
   }
 };

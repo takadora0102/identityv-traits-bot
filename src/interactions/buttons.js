@@ -211,7 +211,7 @@ async function handle(interaction, client) {
     if (interaction.isButton() || interaction.isStringSelectMenu()) {
       await interaction.deferUpdate();
     } else if (interaction.isModalSubmit()) {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     }
   } catch {}
 
@@ -320,7 +320,7 @@ async function handle(interaction, client) {
       }
     } catch {}
     try {
-      await interaction.followUp({ content: 'VCから切断しました', ephemeral: true });
+      await interaction.followUp({ content: 'VCから切断しました', flags: MessageFlags.Ephemeral });
     } catch (e) {
       console.error('[buttons] failed to send voice disconnect notice', e);
     }
