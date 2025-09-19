@@ -10,6 +10,7 @@ const {
   TextInputStyle,
   ActionRowBuilder,
   StringSelectMenuBuilder,
+  MessageFlags,
 } = require('discord.js');
 
 const { updatePanel } = require('../core/render');
@@ -230,7 +231,7 @@ async function openSearchModal(interaction, customId, title) {
 // ---- 候補をエフェメラルのセレクトで提示（最大25件 / 残り枠 = maxValues）
 async function respondCandidates(interaction, state, role, query, maxValues, selectId) {
   if (maxValues <= 0) {
-    await interaction.reply({ content: '枠は埋まっています。', components: [], ephemeral: true });
+    await interaction.reply({ content: '枠は埋まっています。', components: [], flags: MessageFlags.Ephemeral });
     return true;
   }
 
@@ -291,7 +292,7 @@ async function respondCandidates(interaction, state, role, query, maxValues, sel
     await interaction.reply({
       content: '候補が見つかりませんでした。検索語を変えて再試行してください。',
       components: [],
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return true;
   }
@@ -307,7 +308,7 @@ async function respondCandidates(interaction, state, role, query, maxValues, sel
   await interaction.reply({
     content: '候補から選択してください。',
     components: [row],
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
   return true;
 }
