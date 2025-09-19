@@ -1,10 +1,53 @@
 // src/db/index.js
 const { Pool } = require('pg');
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }, // Supabase は SSL 必須
-});
+function buildPoolConfig() {
+  const rawUrl = process.env.DATABASE_URL;
+  if (!rawUrl) {
+    throw new Error('DATABASE_URL is not set.');
+  }
+
+  const dbUrl = new URL(rawUrl);
+  const envSslMode = (process.env.DATABASE_SSL_MODE || '').toLowerCase();
+  const urlSslMode = (dbUrl.searchParams.get('sslmode') || '').toLowerCase();
+  const effectiveSslMode = envSslMode || urlSslMode;
+
+  const rawCa = process.env.DATABASE_CA_CERT || process.env.DATABASE_SSL_CERT;
+  let ssl;
+
+  if (rawCa) {
+    // 1行にエスケープされた証明書を想定 (Render の環境変数など)
+    ssl = {
+      ca: rawCa.replace(/\\n/g, '\n'),
+      rejectUnauthorized: true,
+    };
+  } else if (effectiveSslMode === 'disable') {
+    ssl = false;
+  } else if (effectiveSslMode === 'no-verify' || effectiveSslMode === 'allow') {
+    ssl = { rejectUnauthorized: false };
+  } else if (effectiveSslMode === 'verify-full' || effectiveSslMode === 'verify-ca') {
+    ssl = { rejectUnauthorized: true };
+  } else {
+    // デフォルト: Render/Supabase など自己署名証明書を許容
+    ssl = process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined;
+  }
+
+  if (urlSslMode) {
+    dbUrl.searchParams.delete('sslmode');
+  }
+
+  const poolConfig = {
+    connectionString: dbUrl.toString(),
+  };
+
+  if (ssl !== undefined) {
+    poolConfig.ssl = ssl;
+  }
+
+  return poolConfig;
+}
+
+const pool = new Pool(buildPoolConfig());
 
 pool.on('error', (err) => {
   console.error('[db] pool error:', err);
