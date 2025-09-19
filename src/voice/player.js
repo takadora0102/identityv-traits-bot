@@ -12,6 +12,7 @@ const {
   demuxProbe,
 } = require('@discordjs/voice');
 const { defaultDir } = require('../core/bootstrapAudio');
+const { getVoiceToken } = require('./token');
 
 const AUDIO_DIR = process.env.AUDIO_DIR || defaultDir;
 const GAP_MS = Number.isFinite(Number(process.env.VOICE_GAP_MS))
@@ -137,7 +138,7 @@ function enqueueTokens(guildId, tokens) {
   for (const t of tokens) {
     const p = audioPath(t);
     if (p) files.push(p);
-    else console.warn(`[voice] missing token file: ${t}`);
+    else if (!getVoiceToken(t)) console.warn(`[voice] missing token file: ${t}`);
   }
   if (files.length === 0) return;
   ensureQueue(guildId).push(...files);
