@@ -5,6 +5,30 @@
 const { updatePanel } = require('./render');
 const { enqueueTokens } = require('../voice/player');
 
+function ensureTimeoutBucket(target, key) {
+  if (!target) return [];
+  if (!Array.isArray(target[key])) target[key] = [];
+  return target[key];
+}
+
+function registerTimeout(target, key, handle) {
+  const bucket = ensureTimeoutBucket(target, key);
+  bucket.push(handle);
+  return handle;
+}
+
+function clearTimeoutBucket(target, key) {
+  if (!target || !Array.isArray(target[key])) return;
+  for (const h of target[key]) clearTimeout(h);
+  target[key].length = 0;
+}
+
+function removeTimeoutHandle(target, key, handle) {
+  if (!target || !Array.isArray(target[key])) return;
+  const idx = target[key].indexOf(handle);
+  if (idx >= 0) target[key].splice(idx, 1);
+}
+
 // 互換のため残している（以前のコードで呼んでいる可能性）
 function startScheduler(_client) {
   // no-op
@@ -29,7 +53,9 @@ function scheduleMarks(client, state, trait, endsAtMs, { isInitial = false } = {
     const fireAt = endsAtMs - m * 1000;
     const wait = fireAt - Date.now();
 
-    scheduleAfter(wait, () => {
+    let handle;
+    handle = scheduleAfter(wait, () => {
+      removeTimeoutHandle(trait, 'cooldownTimeouts', handle);
       // 初期CTでは 3/2/1 をスキップ（0のみ鳴らす）
       if (isInitial && (m === 3 || m === 2 || m === 1)) return;
 
@@ -46,6 +72,7 @@ function scheduleMarks(client, state, trait, endsAtMs, { isInitial = false } = {
         enqueueTokens(state.guildId, [tok]);
       }
     });
+    registerTimeout(trait, 'cooldownTimeouts', handle);
   }
 }
 
@@ -53,10 +80,13 @@ function scheduleMarks(client, state, trait, endsAtMs, { isInitial = false } = {
 function scheduleInitialReady(client, state, traitKey, readyAtMs) {
   const trait = state.traits?.[traitKey];
   if (!trait) return;
-  scheduleAfter(readyAtMs - Date.now(), () => {
+  let handle;
+  handle = scheduleAfter(readyAtMs - Date.now(), () => {
+    removeTimeoutHandle(trait, 'cooldownTimeouts', handle);
     enqueueTokens(state.guildId, [trait.token, 'ari']);
     updatePanel(client, state);
   });
+  registerTimeout(trait, 'cooldownTimeouts', handle);
 }
 
 // 裏向きカード：120秒で enable + 一度だけ「裏向きカード あり」
@@ -65,19 +95,26 @@ function scheduleUramukiEnable(client, state) {
   const fireAt = state.matchStartAt + 120000;
   if (Date.now() >= fireAt) return; // 既に過ぎている
 
-  scheduleAfter(fireAt - Date.now(), () => {
+  clearTimeoutBucket(state, 'uramukiTimeouts');
+
+  let handle;
+  handle = scheduleAfter(fireAt - Date.now(), () => {
+    removeTimeoutHandle(state, 'uramukiTimeouts', handle);
     // 既に使っていなければアナウンス
     if (!state.usedUramuki) {
       enqueueTokens(state.guildId, ['uramuki', 'ari']);
     }
     updatePanel(client, state);
   });
+  registerTimeout(state, 'uramukiTimeouts', handle);
 }
 
 // 汎用：特質CTを開始（残りからでも新規でも）
 function startTraitCooldown(client, state, traitKey, cooldownSec, { isInitial = false } = {}) {
   const trait = state.traits?.[traitKey];
   if (!trait) return;
+
+  clearTimeoutBucket(trait, 'cooldownTimeouts');
 
   const now = Date.now();
   const endsAt = now + cooldownSec * 1000;
