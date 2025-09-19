@@ -17,7 +17,6 @@ const {
   startTraitCooldown,
 } = require('../core/scheduler');
 const { enqueueTokens, stopAll, disconnect } = require('../voice/player');
-const { updateMatch } = require('../db');
 
 // 特質テーブル（抜粋例：実プロジェクトの既存 state.traits を利用してください）
 const NEXT_CT = { // nextサイクル（通常CT）
