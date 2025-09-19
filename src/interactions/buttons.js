@@ -7,7 +7,7 @@
 // - ランクの段階UIは rank.js に委譲
 
 const { MessageFlags } = require('discord.js');
-const { createMatch, updateMatch } = require('../db');
+const { createMatch, updateMatch, closeMatch } = require('../db');
 const { updatePanel } = require('../core/render');
 const { getGuildState: getCoreGuildState } = require('../core/state');
 const rank = require('./rank');
@@ -168,6 +168,25 @@ async function persistMatchMeta(state, context) {
   }
 }
 
+async function closeActiveMatch(state, reason) {
+  const shared = getCoreGuildState(state.guildId);
+  const matchId = state?.rank?.matchId ?? shared?.rank?.matchId ?? null;
+
+  if (matchId) {
+    try {
+      await closeMatch(matchId);
+    } catch (err) {
+      console.error(`[buttons] failed to close match (${reason})`, err);
+    }
+  }
+
+  if (state?.rank) state.rank.matchId = null;
+  if (shared) {
+    if (!shared.rank) shared.rank = {};
+    shared.rank.matchId = null;
+  }
+}
+
 // 初期CTの予約（4特質 + 裏向きカード120s enable）
 function scheduleMatchStart(client, state) {
   state.matchActive = true;
@@ -280,6 +299,7 @@ async function handle(interaction, client) {
   if (interaction.isButton() && id === 'game:end') {
     // 試合終了：音声 & 状態リセット（ランクは rank.js 側で結果入力 → save）
     enqueueTokens(state.guildId, ['shiai_shuuryou']);
+    await closeActiveMatch(state, 'game:end');
     state.matchActive = false;
     state.matchStartAt = null;
     state.usedUramuki = false;
@@ -303,6 +323,7 @@ async function handle(interaction, client) {
 
   if (interaction.isButton() && id === 'game:next') {
     // 待機へ戻す（入口へ）
+    await closeActiveMatch(state, 'game:next');
     state.mode = null;
     state.rank = createInitialRankState();
     state.matchActive = false;
