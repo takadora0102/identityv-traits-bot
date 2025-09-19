@@ -237,6 +237,10 @@ async function respondCandidates(interaction, state, role, query, maxValues, sel
   const trimmedQuery = (query ?? '').trim();
   const isBanSelect = selectId.startsWith('select:rank:ban:');
   const shouldOfferNone = isBanSelect && trimmedQuery === '';
+  const tokens = trimmedQuery
+    .split(/[、，､,]/)
+    .map(token => token.trim())
+    .filter(token => token.length > 0);
 
   // 既存選択を除外
   const exclude = new Set([
@@ -246,7 +250,29 @@ async function respondCandidates(interaction, state, role, query, maxValues, sel
     state.rank.pickHunter || undefined,
   ].filter(Boolean));
 
-  const list = search(role, trimmedQuery, shouldOfferNone ? 24 : 25, exclude);
+  const limit = shouldOfferNone ? 24 : 25;
+  let list;
+
+  if (tokens.length <= 1) {
+    const token = tokens[0] ?? trimmedQuery;
+    list = search(role, token, limit, exclude);
+  } else {
+    const aggregated = [];
+    const seen = new Set();
+
+    for (const token of tokens) {
+      const results = search(role, token, limit, exclude);
+      for (const candidate of results) {
+        if (seen.has(candidate.id)) continue;
+        seen.add(candidate.id);
+        aggregated.push(candidate);
+        if (aggregated.length >= limit) break;
+      }
+      if (aggregated.length >= limit) break;
+    }
+
+    list = aggregated;
+  }
   const options = list.map(x => ({ label: x.ja, value: x.id, description: x.kana ?? undefined }));
 
   if (shouldOfferNone) {
