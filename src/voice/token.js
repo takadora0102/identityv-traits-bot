@@ -12,11 +12,11 @@ function loadToken({ envKey, filePath, label }) {
 }
 
 const TOKEN_LOADERS = {
-  kaidoku_kasoku: () =>
+  kaitoku_kasoku: () =>
     loadToken({
-      envKey: 'KAIDOKU_KASOKU_TOKEN',
-      filePath: '/etc/secrets/kaidoku_kasoku',
-      label: 'kaidoku_kasoku',
+      envKey: 'KAITOKU_KASOKU_TOKEN',
+      filePath: '/etc/secrets/kaitoku_kasoku',
+      label: 'kaitoku_kasoku',
     }),
 };
 
