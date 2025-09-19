@@ -26,7 +26,7 @@ function createInitialState(guildId) {
     initialReady: {},
 
     traits: {
-      // keyごとに { uses, cooldownEndsAt, cooldownSec, cooldownTimeouts:Set, uiInterval, stacking:{stacks,partial,nextMs,lastTick,interval} } を保持
+      // keyごとに { uses, cooldownEndsAt, cooldownSec, cooldownTimeouts:[], uiInterval, stacking:{stacks,partial,nextMs,lastTick,interval} } を保持
     },
 
     revealedKey: null,
@@ -56,9 +56,16 @@ function cancelAllTimers(state) {
   for (const k of Object.keys(state.traits)) {
     const t = state.traits[k];
     if (!t) continue;
-    if (t.cooldownTimeouts) for (const h of t.cooldownTimeouts) clearTimeout(h);
+    if (Array.isArray(t.cooldownTimeouts)) {
+      for (const h of t.cooldownTimeouts) clearTimeout(h);
+      t.cooldownTimeouts.length = 0;
+    }
     if (t.uiInterval) clearInterval(t.uiInterval);
     if (t.stacking?.interval) clearInterval(t.stacking.interval);
+  }
+  if (Array.isArray(state.uramukiTimeouts)) {
+    for (const h of state.uramukiTimeouts) clearTimeout(h);
+    state.uramukiTimeouts.length = 0;
   }
   state.traits = {};
 }

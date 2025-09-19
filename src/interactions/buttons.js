@@ -84,14 +84,14 @@ function getGuildState(client, interaction) {
       rank: createInitialRankState(),
       // 特質構造（音声トークン名と endsAt 管理）
       traits: {
-        kofun:      { token: 'kofun',      endsAt: 0, uiInterval: null },
-        shunkan:    { token: 'shunkan',    endsAt: 0, uiInterval: null },
-        ikei:       { token: 'ikei',       endsAt: 0, uiInterval: null },
-        shinshutsu: { token: 'shinshutsu', endsAt: 0, uiInterval: null },
-        ijou:       { token: 'ijou',       endsAt: 0, uiInterval: null },
-        junshi:     { token: 'junshi',     endsAt: 0, uiInterval: null },
-        kanshi:     { token: 'kanshi',     endsAt: 0, uiInterval: null },
-        listen:     { token: 'listen',     endsAt: 0, uiInterval: null },
+        kofun:      { token: 'kofun',      endsAt: 0, uiInterval: null, cooldownTimeouts: [] },
+        shunkan:    { token: 'shunkan',    endsAt: 0, uiInterval: null, cooldownTimeouts: [] },
+        ikei:       { token: 'ikei',       endsAt: 0, uiInterval: null, cooldownTimeouts: [] },
+        shinshutsu: { token: 'shinshutsu', endsAt: 0, uiInterval: null, cooldownTimeouts: [] },
+        ijou:       { token: 'ijou',       endsAt: 0, uiInterval: null, cooldownTimeouts: [] },
+        junshi:     { token: 'junshi',     endsAt: 0, uiInterval: null, cooldownTimeouts: [] },
+        kanshi:     { token: 'kanshi',     endsAt: 0, uiInterval: null, cooldownTimeouts: [] },
+        listen:     { token: 'listen',     endsAt: 0, uiInterval: null, cooldownTimeouts: [] },
       },
     });
   }
@@ -287,8 +287,16 @@ async function handle(interaction, client) {
     state.revealedLabel = null;
     // 特質タイマー停止
     for (const t of Object.values(state.traits)) {
+      if (Array.isArray(t.cooldownTimeouts)) {
+        for (const h of t.cooldownTimeouts) clearTimeout(h);
+        t.cooldownTimeouts.length = 0;
+      }
       if (t.uiInterval) clearInterval(t.uiInterval);
       t.uiInterval = null; t.endsAt = 0;
+    }
+    if (Array.isArray(state.uramukiTimeouts)) {
+      for (const h of state.uramukiTimeouts) clearTimeout(h);
+      state.uramukiTimeouts.length = 0;
     }
     return updatePanel(client, state, interaction);
   }
@@ -303,8 +311,16 @@ async function handle(interaction, client) {
     state.revealedKey = null;
     state.revealedLabel = null;
     for (const t of Object.values(state.traits)) {
+      if (Array.isArray(t.cooldownTimeouts)) {
+        for (const h of t.cooldownTimeouts) clearTimeout(h);
+        t.cooldownTimeouts.length = 0;
+      }
       if (t.uiInterval) clearInterval(t.uiInterval);
       t.uiInterval = null; t.endsAt = 0;
+    }
+    if (Array.isArray(state.uramukiTimeouts)) {
+      for (const h of state.uramukiTimeouts) clearTimeout(h);
+      state.uramukiTimeouts.length = 0;
     }
     return updatePanel(client, state, interaction);
   }
