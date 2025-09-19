@@ -1,9 +1,28 @@
 // src/db/index.js
+const fs = require('fs');
 const { Pool } = require('pg');
+
+function resolveSslConfig() {
+  if (process.env.DB_SSL_REJECT_UNAUTHORIZED === 'false') {
+    return { rejectUnauthorized: false };
+  }
+
+  const caPath = process.env.DB_SSL_CA_PATH;
+  if (caPath) {
+    try {
+      fs.accessSync(caPath, fs.constants.R_OK);
+      return { ca: fs.readFileSync(caPath, 'utf8') };
+    } catch (err) {
+      console.warn(`[db] Failed to read DB SSL CA file at ${caPath}: ${err.message}`);
+    }
+  }
+
+  return true;
+}
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }, // Supabase は SSL 必須
+  ssl: resolveSslConfig(),
 });
 
 async function init() {
